@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>充电桩 · 用户端</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --surface-hover: #f8f9fb;
+      --border: #e8ecf1;
+      --text: #1a1d23;
+      --text-secondary: #6b7280;
+      --text-muted: #9ca3af;
+      --primary: #16a34a;
+      --primary-light: #dcfce7;
+      --primary-dark: #15803d;
+      --accent: #2563eb;
+      --accent-light: #dbeafe;
+      --warning: #f59e0b;
+      --warning-light: #fef3c7;
+      --danger: #ef4444;
+      --danger-light: #fee2e2;
+      --radius: 14px;
+      --radius-sm: 10px;
+      --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.06);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    }
+    * { margin:0; padding:0; box-sizing:border-box }
+    body { font-family:var(--font); background:var(--bg); color:var(--text); line-height:1.5; -webkit-font-smoothing:antialiased }
+    .container { max-width:720px; margin:0 auto; padding:24px 20px 48px }
+
+    /* Nav */
+    .nav { background:var(--surface); border-bottom:1px solid var(--border); padding:0 20px; height:56px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(12px); background:rgba(255,255,255,0.92) }
+    .nav-logo { display:flex; align-items:center; gap:10px; font-weight:700; font-size:16px; color:var(--text) }
+    .nav-logo .dot { width:10px; height:10px; border-radius:50%; background:var(--primary); box-shadow:0 0 8px rgba(22,163,74,0.5) }
+    .nav-user { display:flex; align-items:center; gap:12px; font-size:14px; color:var(--text-secondary) }
+    .nav-user .avatar { width:32px; height:32px; border-radius:50%; background:var(--primary-light); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; font-weight:600; font-size:14px }
+    .btn-logout { background:none; border:1px solid var(--border); padding:6px 14px; border-radius:8px; font-size:13px; color:var(--text-secondary); cursor:pointer; transition:all .15s }
+    .btn-logout:hover { background:var(--danger-light); border-color:var(--danger); color:var(--danger) }
+
+    /* Auth card */
+    .auth-card { background:var(--surface); border-radius:var(--radius); padding:40px 32px; box-shadow:var(--shadow-md); max-width:420px; margin:64px auto }
+    .auth-card h2 { font-size:22px; font-weight:700; margin-bottom:4px }
+    .auth-card .sub { color:var(--text-secondary); font-size:14px; margin-bottom:28px }
+    .field { margin-bottom:18px }
+    .field label { display:block; font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px }
+    .field input { width:100%; padding:10px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:15px; font-family:var(--font); transition:border-color .15s; outline:none }
+    .field input:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light) }
+    .btn { padding:10px 24px; border-radius:var(--radius-sm); font-size:15px; font-weight:600; cursor:pointer; border:none; transition:all .15s; font-family:var(--font) }
+    .btn-primary { background:var(--primary); color:#fff; width:100% } .btn-primary:hover { background:var(--primary-dark) }
+    .btn-outline { background:var(--surface); border:1px solid var(--border); color:var(--text-secondary) }
+    .btn-outline:hover { background:var(--surface-hover) }
+    .btn-accent { background:var(--accent); color:#fff } .btn-accent:hover { background:#1d4ed8 }
+    .btn-warning { background:var(--warning); color:#fff } .btn-warning:hover { background:#d97706 }
+    .btn-danger { background:var(--danger); color:#fff } .btn-danger:hover { background:#dc2626 }
+    .btn-sm { padding:6px 14px; font-size:13px; border-radius:8px }
+    .switch-link { color:var(--accent); cursor:pointer; font-size:14px; text-decoration:none; font-weight:500 }
+    .switch-link:hover { text-decoration:underline }
+
+    /* Status badge */
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; font-size:13px; font-weight:600 }
+    .badge::before { content:''; width:7px; height:7px; border-radius:50% }
+    .badge-queuing { background:var(--accent-light); color:#1d4ed8 } .badge-queuing::before { background:#2563eb }
+    .badge-dispatched { background:var(--warning-light); color:#92400e } .badge-dispatched::before { background:#f59e0b }
+    .badge-charging { background:var(--primary-light); color:var(--primary-dark) } .badge-charging::before { background:#16a34a; animation:pulse 1.5s infinite }
+    .badge-completed { background:#f0f0f0; color:#666 } .badge-completed::before { background:#999 }
+    .badge-cancelled { background:var(--danger-light); color:#b91c1c } .badge-cancelled::before { background:#ef4444 }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* Cards */
+    .card { background:var(--surface); border-radius:var(--radius); padding:24px; box-shadow:var(--shadow); margin-bottom:16px; border:1px solid var(--border) }
+    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px }
+    .card-title { font-size:15px; font-weight:700; color:var(--text); display:flex; align-items:center; gap:8px }
+    .card-title .icon { width:20px; height:20px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:11px }
+
+    /* Queue display */
+    .queue-hero { text-align:center; padding:12px 0 }
+    .queue-num { font-size:56px; font-weight:800; color:var(--text); letter-spacing:-1px; line-height:1 }
+    .queue-label { font-size:13px; color:var(--text-muted); margin-top:6px; text-transform:uppercase; letter-spacing:1px }
+    .queue-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:24px }
+    .queue-stat { text-align:center; padding:12px 8px; background:var(--surface-hover); border-radius:var(--radius-sm) }
+    .queue-stat .val { font-size:20px; font-weight:700; letter-spacing:-0.5px }
+    .queue-stat .lbl { font-size:11px; color:var(--text-muted); margin-top:2px; text-transform:uppercase; letter-spacing:0.5px }
+
+    /* Charging progress ring */
+    .progress-ring-wrap { text-align:center; padding:16px 0 }
+    .progress-ring { position:relative; width:140px; height:140px; margin:0 auto }
+    .progress-ring svg { transform:rotate(-90deg) }
+    .progress-ring .bg { fill:none; stroke:var(--border); stroke-width:8 }
+    .progress-ring .fg { fill:none; stroke:var(--primary); stroke-width:8; stroke-linecap:round; transition:stroke-dashoffset .6s }
+    .progress-ring .percent { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:800; letter-spacing:-1px }
+    .charge-info { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:20px }
+    .charge-info .item { padding:12px; background:var(--surface-hover); border-radius:var(--radius-sm); display:flex; justify-content:space-between; align-items:center; font-size:14px }
+    .charge-info .val { font-weight:700; color:var(--primary-dark) }
+
+    /* Radio group */
+    .radio-group { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px }
+    .radio-card { position:relative; cursor:pointer }
+    .radio-card input { position:absolute; opacity:0 }
+    .radio-card .radio-body { display:block; padding:16px; border:2px solid var(--border); border-radius:var(--radius-sm); text-align:center; transition:all .15s }
+    .radio-card input:checked + .radio-body { border-color:var(--primary); background:var(--primary-light) }
+    .radio-card .radio-title { font-weight:700; font-size:15px }
+    .radio-card .radio-sub { font-size:12px; color:var(--text-muted); margin-top:2px }
+
+    /* Action buttons */
+    .actions { display:flex; gap:8px; flex-wrap:wrap }
+    .actions .btn { flex:1; min-width:80px }
+
+    /* Bills */
+    .bill-item { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s }
+    .bill-item:last-child { border-bottom:none }
+    .bill-item:hover { background:var(--surface-hover); margin:0 -16px; padding-left:16px; padding-right:16px; border-radius:8px }
+    .bill-left .bill-id { font-weight:600; font-size:14px }
+    .bill-left .bill-date { font-size:12px; color:var(--text-muted); margin-top:2px }
+    .bill-right { text-align:right }
+    .bill-right .bill-fee { font-weight:700; font-size:16px; color:var(--text) }
+    .bill-right .bill-status { font-size:12px; margin-top:2px }
+    .bill-paid { color:var(--primary) }
+    .bill-unpaid { color:var(--warning) }
+
+    /* Modal */
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:200; display:flex; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px) }
+    .modal { background:var(--surface); border-radius:var(--radius); padding:28px; max-width:440px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.15) }
+    .modal h3 { font-size:18px; margin-bottom:20px }
+    .modal .detail-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px }
+    .modal .detail-row .lbl { color:var(--text-secondary) }
+    .modal .detail-row .val { font-weight:600 }
+    .modal .total-row { font-size:18px; font-weight:800; padding:14px 0; border-top:2px solid var(--border); margin-top:8px; display:flex; justify-content:space-between }
+    .modal-actions { display:flex; gap:10px; margin-top:20px }
+
+    .empty { text-align:center; padding:32px; color:var(--text-muted); font-size:14px }
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0) }
+
+    /* Plate input */
+    .plate-input { display:flex; align-items:center; gap:0; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; transition:border-color .15s }
+    .plate-input:focus-within { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light) }
+    .plate-select { border:none; padding:10px 10px 10px 12px; font-size:15px; font-family:var(--font); background:var(--surface-hover); color:var(--text); outline:none; cursor:pointer; -webkit-appearance:none; appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; padding-right:26px }
+    .plate-province { min-width:60px }
+    .plate-letter { min-width:54px; border-left:1px solid var(--border) }
+    .plate-dot { padding:10px 2px; font-size:18px; color:var(--text-muted); font-weight:700; background:var(--surface) }
+    .plate-suffix { flex:1; border:none; padding:10px 14px 10px 4px; font-size:15px; font-family:var(--font); outline:none; letter-spacing:1px; text-transform:uppercase; min-width:80px }
+    .plate-suffix::placeholder { letter-spacing:0; text-transform:none; color:var(--text-muted) }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-logo"><span class="dot"></span> EV Charge</div>
+    <div class="nav-user" v-if="token">
+      <span>{{ carId }}</span>
+      <div class="avatar">{{ (userName || carId).charAt(0).toUpperCase() }}</div>
+      <button class="btn-logout" @click="logout">退出</button>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Auth -->
+    <div v-if="!token" class="auth-card">
+      <h2>{{ isLogin ? '欢迎回来' : '创建账号' }}</h2>
+      <p class="sub">{{ isLogin ? '登录您的账号以使用充电服务' : '注册后即可开始使用充电桩' }}</p>
+      <div class="field">
+        <label>车牌号</label>
+        <div class="plate-input">
+          <select v-model="authForm.plate_province" class="plate-select plate-province">
+            <option v-for="p in provinces" :value="p">{{ p }}</option>
+          </select>
+          <select v-model="authForm.plate_letter" class="plate-select plate-letter">
+            <option v-for="l in plateLetters" :value="l">{{ l }}</option>
+          </select>
+          <span class="plate-dot">&middot;</span>
+          <input v-model="authForm.plate_suffix" class="plate-suffix" placeholder="12345" maxlength="6" @keyup.enter="isLogin ? doLogin() : doRegister()">
+        </div>
+      </div>
+      <div class="field" v-if="!isLogin">
+        <label>用户名</label>
+        <input v-model="authForm.user_name" placeholder="您的称呼">
+      </div>
+      <div class="field" v-if="!isLogin">
+        <label>电池容量 (kWh)</label>
+        <input v-model="authForm.car_capacity" type="number" placeholder="例如：60" @keyup.enter="doRegister()">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input v-model="authForm.password" type="password" placeholder="输入密码" @keyup.enter="isLogin ? doLogin() : doRegister()">
+      </div>
+      <button class="btn btn-primary" @click="isLogin ? doLogin() : doRegister()" :disabled="loading">
+        {{ loading ? '请稍候...' : (isLogin ? '登录' : '注册') }}
+      </button>
+      <p style="text-align:center;margin-top:18px;font-size:14px;color:var(--text-secondary)">
+        {{ isLogin ? '还没有账号？' : '已有账号？' }}
+        <a class="switch-link" @click="isLogin=!isLogin">{{ isLogin ? '立即注册' : '去登录' }}</a>
+      </p>
+      <p style="text-align:center;margin-top:12px"><a href="/" style="color:var(--text-muted);font-size:13px;text-decoration:none">&larr; 返回首页</a></p>
+    </div>
+
+    <template v-if="token">
+      <!-- New Request -->
+      <div v-if="!request" class="card">
+        <div class="card-header">
+          <span class="card-title">开始充电</span>
+        </div>
+        <div class="radio-group">
+          <label class="radio-card">
+            <input type="radio" v-model="reqForm.mode" value="F">
+            <span class="radio-body">
+              <div class="radio-title">快充</div>
+              <div class="radio-sub">30 kW · 约 3 倍速</div>
+            </span>
+          </label>
+          <label class="radio-card">
+            <input type="radio" v-model="reqForm.mode" value="T">
+            <span class="radio-body">
+              <div class="radio-title">慢充</div>
+              <div class="radio-sub">10 kW · 经济实惠</div>
+            </span>
+          </label>
+        </div>
+        <div class="field">
+          <label>请求充电量 (kWh)</label>
+          <input v-model="reqForm.amount" type="number" placeholder="输入需要的电量" @keyup.enter="submitRequest">
+        </div>
+        <button class="btn btn-primary" @click="submitRequest" :disabled="loading">
+          {{ loading ? '提交中...' : '提交充电申请' }}
+        </button>
+      </div>
+
+      <!-- Queue / Charging Status -->
+      <div v-if="request && request.status !== 'completed' && request.status !== 'cancelled'" class="card">
+        <div class="card-header">
+          <span class="card-title">当前状态</span>
+          <span class="badge" :class="'badge-'+request.status">{{ statusLabel }}</span>
+        </div>
+
+        <!-- Queuing -->
+        <div v-if="request.status === 'queuing'" class="queue-hero">
+          <div class="queue-num">{{ request.queue_num }}</div>
+          <div class="queue-label">您的排队号码</div>
+          <div class="queue-stats">
+            <div class="queue-stat">
+              <div class="val">{{ request.position?.front_count ?? 0 }}</div>
+              <div class="lbl">前方等待</div>
+            </div>
+            <div class="queue-stat">
+              <div class="val">{{ request.request_mode === 'F' ? '快充' : '慢充' }}</div>
+              <div class="lbl">充电模式</div>
+            </div>
+            <div class="queue-stat">
+              <div class="val">{{ request.request_amount }}<span style="font-size:14px"> 度</span></div>
+              <div class="lbl">请求电量</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dispatched (normal) -->
+        <div v-if="request.status === 'dispatched' && !request.fault_notice" class="queue-hero">
+          <div style="font-size:48px">&#x26A1;</div>
+          <div style="font-size:18px;font-weight:700;margin-top:8px">已调度，等待开始充电</div>
+          <div style="color:var(--text-secondary);font-size:14px;margin-top:4px">
+            充电桩 #{{ request.pile_id || '—' }} · {{ request.request_mode === 'F' ? '快充' : '慢充' }} · {{ request.request_amount }} 度
+          </div>
+        </div>
+
+        <!-- Dispatched (fault reschedule) -->
+        <div v-if="request.status === 'dispatched' && request.fault_notice" class="queue-hero" style="background:var(--warning-light);margin:-24px;padding:24px;border-radius:var(--radius)">
+          <div style="font-size:36px">&#x26A0;</div>
+          <div style="font-size:17px;font-weight:700;margin-top:8px;color:#92400e">充电桩故障通知</div>
+          <div style="color:#92400e;font-size:14px;margin-top:6px;line-height:1.6">
+            原充电桩发生故障已停止服务，系统已自动将您的车辆调度至<br>
+            <strong>充电桩 #{{ request.pile_id }}</strong>（{{ request.request_mode === 'F' ? '快充' : '慢充' }}· {{ request.request_amount }} 度）
+          </div>
+          <div style="color:#92400e;font-size:13px;margin-top:6px">故障期间的充电费用已结算，请确认是否开始充电。</div>
+        </div>
+
+        <!-- Charging -->
+        <div v-if="chargingState && request.status === 'charging'" class="progress-ring-wrap">
+          <div class="progress-ring">
+            <svg width="140" height="140" viewBox="0 0 140 140">
+              <circle class="bg" cx="70" cy="70" r="60"/>
+              <circle class="fg" cx="70" cy="70" r="60"
+                :stroke-dasharray="2 * Math.PI * 60"
+                :stroke-dashoffset="2 * Math.PI * 60 * (1 - chargePercent/100)"/>
+            </svg>
+            <div class="percent">{{ Math.round(chargePercent) }}%</div>
+          </div>
+          <div class="charge-info">
+            <div class="item"><span>充电桩</span><span class="val">#{{ chargingState.pile_id }}</span></div>
+            <div class="item"><span>功率</span><span class="val">{{ chargingState.pile_power }} kW</span></div>
+            <div class="item"><span>已充电量</span><span class="val">{{ chargingState.estimated_amount?.toFixed(1) }} / {{ chargingState.request_amount }} 度</span></div>
+            <div class="item"><span>当前费用</span><span class="val">&yen;{{ chargingState.current_total?.toFixed(2) }}</span></div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions" style="margin-top:20px">
+          <template v-if="request.status === 'queuing'">
+            <input v-model="modifyAmountVal" type="number" placeholder="修改充电量(度)" style="flex:2;padding:8px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font);outline:none" @keyup.enter="modifyAmount">
+            <button class="btn btn-outline btn-sm" @click="modifyAmount">确认修改</button>
+            <button class="btn btn-outline btn-sm" @click="modifyMode">切换快/慢充</button>
+            <button class="btn btn-danger btn-sm" @click="cancelRequest">取消</button>
+          </template>
+          <template v-if="request.status === 'dispatched'">
+            <button class="btn btn-primary" @click="startCharging">开始充电</button>
+            <button class="btn btn-danger btn-sm" @click="cancelRequest">取消</button>
+          </template>
+          <template v-if="request.status === 'charging'">
+            <button class="btn btn-danger" @click="endCharging">结束充电</button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Completed state -->
+      <div v-if="request && (request.status === 'completed' || request.status === 'cancelled')" class="card">
+        <div style="text-align:center;padding:32px">
+          <div style="font-size:48px;margin-bottom:12px">{{ request.status === 'completed' ? '&#x2705;' : '&#x274C;' }}</div>
+          <div style="font-size:18px;font-weight:700">{{ request.status === 'completed' ? '充电完成' : '已取消' }}</div>
+          <div style="color:var(--text-secondary);font-size:14px;margin-top:4px">
+            {{ request.status === 'completed' ? '查看下方账单支付费用' : '如需重新充电请提交新申请' }}
+          </div>
+          <button v-if="request.status === 'completed' || request.status === 'cancelled'" class="btn btn-primary" style="margin-top:20px" @click="newRequest">发起新充电</button>
+        </div>
+      </div>
+
+      <!-- Bills -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">账单记录</span>
+          <button class="btn btn-outline btn-sm" @click="loadBills">刷新</button>
+        </div>
+        <div v-if="bills.length === 0" class="empty">暂无账单记录</div>
+        <div v-for="b in bills" :key="b.bill_id" class="bill-item" @click="showDetail(b)">
+          <div class="bill-left">
+            <div class="bill-id">账单 #{{ b.bill_id }}</div>
+            <div class="bill-date">{{ b.create_time?.slice(0,16)?.replace('T',' ') }}</div>
+          </div>
+          <div class="bill-right">
+            <div class="bill-fee">&yen;{{ b.total_fee?.toFixed(2) }}</div>
+            <div class="bill-status" :class="b.status === 'paid' ? 'bill-paid' : 'bill-unpaid'">
+              {{ b.status === 'paid' ? '已支付' : '待支付' }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Detail Modal -->
+  <div v-if="detailVisible" class="modal-overlay" @click.self="detailVisible=false">
+    <div class="modal">
+      <h3>充电详单</h3>
+      <div class="detail-row"><span class="lbl">详单编号</span><span class="val">#{{ currentDetail?.detail_id }}</span></div>
+      <div class="detail-row"><span class="lbl">充电桩</span><span class="val">#{{ currentDetail?.pile_id }}</span></div>
+      <div class="detail-row"><span class="lbl">充电电量</span><span class="val">{{ currentDetail?.charge_amount?.toFixed(2) }} 度</span></div>
+      <div class="detail-row"><span class="lbl">充电时长</span><span class="val">{{ currentDetail?.charge_duration?.toFixed(2) }} 小时</span></div>
+      <div class="detail-row"><span class="lbl">启动时间</span><span class="val">{{ currentDetail?.start_time?.replace('T',' ') }}</span></div>
+      <div class="detail-row"><span class="lbl">停止时间</span><span class="val">{{ currentDetail?.stop_time?.replace('T',' ') }}</span></div>
+      <div class="detail-row"><span class="lbl">充电费用</span><span class="val">&yen;{{ currentDetail?.charge_fee?.toFixed(2) }}</span></div>
+      <div class="detail-row"><span class="lbl">服务费用</span><span class="val">&yen;{{ currentDetail?.service_fee?.toFixed(2) }}</span></div>
+      <div class="total-row"><span>合计</span><span style="color:var(--primary)">&yen;{{ currentDetail?.total_fee?.toFixed(2) }}</span></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" style="flex:1" @click="detailVisible=false">关闭</button>
+        <button v-if="currentBill?.status !== 'paid'" class="btn btn-primary" style="flex:1" @click="payBill">立即支付</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue
+const API = '/api'
+
+// 全局拦截：认证失效时自动退回登录页
+axios.interceptors.response.use(
+  r => r,
+  err => {
+    if (err.response && (err.response.status === 401 || err.response.status === 422)) {
+      localStorage.clear()
+      location.reload()
+    }
+    return Promise.reject(err)
+  }
+)
+
+createApp({
+  data() {
+    return {
+      token: localStorage.getItem('token') || '',
+      carId: localStorage.getItem('car_id') || '',
+      userName: localStorage.getItem('user_name') || '',
+      isLogin: true, loading: false,
+      provinces: ['京','沪','粤','津','渝','苏','浙','冀','晋','辽','吉','黑','皖','闽','赣','鲁','豫','鄂','湘','琼','川','贵','云','陕','甘','青','桂','蒙','藏','宁','新'],
+      plateLetters: ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'],
+      authForm: { plate_province:'京', plate_letter:'A', plate_suffix:'', user_name:'', car_capacity:60, password:'' },
+      reqForm: { mode:'F', amount:40 },
+      request: null, chargingState: null,
+      modifyAmountVal: '', pollTimer: null,
+      bills: [], detailVisible: false, currentDetail: null, currentBill: null,
+    }
+  },
+  computed: {
+    fullCarId() {
+      const pr = this.authForm.plate_province || ''
+      const lt = this.authForm.plate_letter || ''
+      const sf = (this.authForm.plate_suffix || '').toUpperCase().replace(/\s/g,'')
+      return sf ? pr + lt + '·' + sf : ''
+    },
+    statusLabel() {
+      const m = { queuing:'排队中', dispatched:'已调度', charging:'充电中', completed:'已完成', cancelled:'已取消' }
+      return m[this.request?.status] || this.request?.status
+    },
+    chargePercent() {
+      if (!this.chargingState) return 0
+      return Math.min(100, (this.chargingState.estimated_amount / this.chargingState.request_amount) * 100)
+    }
+  },
+  mounted() { if (this.token) { axios.defaults.headers.common['Authorization'] = 'Bearer '+this.token; this.loadAll() } },
+  methods: {
+    async doLogin() {
+      this.loading = true
+      try {
+        const r = await axios.post(API+'/auth/login', { car_id: this.fullCarId, password: this.authForm.password })
+        if (r.data.code===0) { this.setAuth(r.data.data); this.loadAll() }
+        else this.toast(r.data.message, 'error')
+      } catch(e) { this.toast('登录失败', 'error') }
+      this.loading = false
+    },
+    async doRegister() {
+      this.loading = true
+      try {
+        if (!this.fullCarId) { this.toast('请输入车牌号', 'error'); this.loading = false; return }
+        const r = await axios.post(API+'/auth/register', { car_id: this.fullCarId, user_name: this.authForm.user_name, car_capacity: this.authForm.car_capacity, password: this.authForm.password })
+        if (r.data.code===0) { this.toast('注册成功'); this.isLogin=true }
+        else this.toast(r.data.message, 'error')
+      } catch(e) { this.toast('注册失败', 'error') }
+      this.loading = false
+    },
+    setAuth(d) {
+      this.token = d.access_token; this.carId = d.car_id; this.userName = d.user_name
+      localStorage.setItem('token', d.access_token); localStorage.setItem('car_id', d.car_id); localStorage.setItem('user_name', d.user_name)
+      axios.defaults.headers.common['Authorization'] = 'Bearer '+d.access_token
+    },
+    logout() { localStorage.clear(); this.token=''; this.request=null; this.chargingState=null; this.bills=[]; if(this.pollTimer) clearInterval(this.pollTimer) },
+    loadAll() { this.loadRequest(); this.loadBills() },
+    async submitRequest() {
+      this.loading = true
+      try {
+        const r = await axios.post(API+'/charging/request', { request_mode:this.reqForm.mode, request_amount:Number(this.reqForm.amount) })
+        if (r.data.code===0) { this.request = r.data.data; this.startPolling() }
+        else this.toast(r.data.message, 'error')
+      } catch(e) { this.toast('请求失败', 'error') }
+      this.loading = false
+    },
+    async loadRequest() {
+      try {
+        const r = await axios.get(API+'/charging/queue-status')
+        if (r.data.code===0) {
+          this.request = r.data.data
+          if (this.request?.status==='charging') { this.loadChargingState(); this.startPolling() }
+        } else {
+          // 请求已完成/取消/不存在 → 清空状态，刷新账单
+          this.request = null
+          this.chargingState = null
+          if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null }
+          this.loadBills()
+        }
+      } catch(e) {}
+    },
+    async loadChargingState() {
+      try {
+        const r = await axios.get(API+'/charging/status')
+        if (r.data.code===0) { this.chargingState = r.data.data }
+        else { this.chargingState = null }
+      } catch(e) { this.chargingState = null }
+    },
+    startPolling() {
+      if (this.pollTimer) clearInterval(this.pollTimer)
+      this.pollTimer = setInterval(() => { this.loadRequest(); if (this.request?.status==='charging') this.loadChargingState() }, 5000)
+    },
+    async modifyAmount() {
+      if (!this.modifyAmountVal) return
+      try { const r = await axios.put(API+'/charging/amount',{amount:Number(this.modifyAmountVal)}); if(r.data.code===0){this.toast('已更新充电量');this.loadRequest()}else this.toast(r.data.message,'error') } catch(e) {}
+    },
+    async modifyMode() {
+      const m = this.request.request_mode==='F'?'T':'F'
+      try { const r = await axios.put(API+'/charging/mode',{mode:m}); if(r.data.code===0){this.toast('已切换模式');this.loadRequest()}else this.toast(r.data.message,'error') } catch(e) {}
+    },
+    async cancelRequest() {
+      try { const r = await axios.delete(API+'/charging/cancel'); if(r.data.code===0){this.request=null;this.chargingState=null;if(this.pollTimer)clearInterval(this.pollTimer)}else this.toast(r.data.message,'error') } catch(e) {}
+    },
+    async startCharging() {
+      try { const r = await axios.post(API+'/charging/start',{pile_id:this.request.pile_id||1}); if(r.data.code===0){this.toast('充电已开始');this.loadRequest();this.loadChargingState()}else this.toast(r.data.message,'error') } catch(e) {}
+    },
+    async endCharging() {
+      try { const r = await axios.post(API+'/charging/end'); if(r.data.code===0){this.request=null;this.chargingState=null;if(this.pollTimer)clearInterval(this.pollTimer);this.loadBills()}else this.toast(r.data.message,'error') } catch(e) {}
+    },
+    newRequest() { this.request = null; this.chargingState = null },
+    async loadBills() {
+      try { const r = await axios.get(API+'/bill/list'); if(r.data.code===0) this.bills = r.data.data } catch(e) {}
+    },
+    async showDetail(b) {
+      this.currentBill = b
+      try { const r = await axios.get(API+'/bill/detail/'+b.bill_id); if(r.data.code===0){this.currentDetail=r.data.data;this.detailVisible=true} } catch(e) {}
+    },
+    async payBill() {
+      try { const r = await axios.post(API+'/bill/pay/'+this.currentBill.bill_id); if(r.data.code===0){this.toast('支付成功');this.detailVisible=false;this.loadBills()} } catch(e) {}
+    },
+    toast(msg, type) {
+      const c = type==='error'?'var(--danger)':'var(--primary)'
+      const el = document.createElement('div')
+      el.textContent = msg
+      Object.assign(el.style, { position:'fixed',top:'20px',left:'50%',transform:'translateX(-50%)',padding:'10px 24px',borderRadius:'10px',background:'var(--surface)',color:c,fontWeight:'600',fontSize:'14px',boxShadow:'0 8px 32px rgba(0,0,0,0.12)',zIndex:'999',border:'1px solid var(--border)' })
+      document.body.appendChild(el)
+      setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(() => el.remove(), 300) }, 2000)
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>

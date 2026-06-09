@@ -1,0 +1,64 @@
+from ..dao.queue_dao import WaitingQueueDAO
+from ..dao.pile_dao import ChargingPileDAO
+from ..dao.pile_queue_dao import PileQueueDAO
+from ..models.waiting_queue import WaitingQueue
+
+
+class QueueService:
+    @staticmethod
+    def generate_queue_num(mode):
+        max_num = WaitingQueueDAO.get_max_queue_num(mode)
+        return f"{mode}{max_num + 1}"
+
+    @staticmethod
+    def add_to_waiting(request_id, mode):
+        max_num = WaitingQueueDAO.get_max_queue_num(mode)
+        queue_num = f"{mode}{max_num + 1}"
+        WaitingQueueDAO.add(request_id, mode, queue_num)
+        return queue_num
+
+    @staticmethod
+    def remove_from_waiting(request_id):
+        WaitingQueueDAO.remove_by_request_id(request_id)
+
+    @staticmethod
+    def get_car_position(car_request):
+        if car_request.status in ("dispatched", "charging"):
+            return {"position": "充电区", "queue_num": car_request.queue_num}
+        front_count = WaitingQueueDAO.get_front_count(car_request.request_id)
+        return {
+            "position": f"等候区第{front_count + 1}位",
+            "queue_num": car_request.queue_num,
+            "front_count": front_count,
+        }
+
+    @staticmethod
+    def has_empty_slot_in_pile(pile_id):
+        count = PileQueueDAO.get_count_by_pile(pile_id)
+        pile = ChargingPileDAO.find_by_id(pile_id)
+        return pile and count < pile.queue_len
+
+    @staticmethod
+    def get_next_from_waiting(mode):
+        return WaitingQueueDAO.get_first_by_mode(mode)
+
+    @staticmethod
+    def get_waiting_queue_list(mode):
+        entries = WaitingQueueDAO.get_all_by_mode(mode)
+        from ..dao.user_dao import ChargingRequestDAO, UserDAO
+
+        result = []
+        for e in entries:
+            req = ChargingRequestDAO.find_by_id(e.request_id)
+            if not req:
+                continue
+            user = UserDAO.find_by_car_id(req.car_id)
+            result.append({
+                "request_id": req.request_id,
+                "car_id": req.car_id,
+                "queue_num": e.queue_num,
+                "request_amount": req.request_amount,
+                "car_capacity": user.car_capacity if user else 0,
+                "wait_minutes": 0,  # simplified
+            })
+        return result

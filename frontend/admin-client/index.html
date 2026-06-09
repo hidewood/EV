@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>充电桩 · 管理控制台</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f6f8; --surface: #ffffff; --surface-hover: #f9fafb;
+      --border: #e5e7eb; --text: #111827; --text-secondary: #6b7280; --text-muted: #9ca3af;
+      --primary: #16a34a; --primary-light: #dcfce7; --primary-dark: #15803d;
+      --accent: #2563eb; --accent-light: #dbeafe;
+      --warning: #f59e0b; --warning-light: #fef3c7;
+      --danger: #ef4444; --danger-light: #fee2e2;
+      --radius: 12px; --radius-sm: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.05);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    }
+    * { margin:0; padding:0; box-sizing:border-box }
+    body { font-family:var(--font); background:var(--bg); color:var(--text); line-height:1.5; -webkit-font-smoothing:antialiased }
+
+    /* Nav */
+    .nav { background:var(--surface); border-bottom:1px solid var(--border); height:56px; display:flex; align-items:center; justify-content:space-between; padding:0 24px; position:sticky; top:0; z-index:100 }
+    .nav-logo { font-weight:700; font-size:16px; display:flex; align-items:center; gap:10px }
+    .nav-logo .dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px rgba(37,99,235,0.4) }
+    .nav-right { display:flex; align-items:center; gap:14px; font-size:14px; color:var(--text-secondary) }
+    .btn-logout { background:none; border:1px solid var(--border); padding:6px 14px; border-radius:6px; font-size:13px; color:var(--text-secondary); cursor:pointer; transition:all .15s; font-family:var(--font) }
+    .btn-logout:hover { background:var(--danger-light); border-color:var(--danger); color:var(--danger) }
+
+    /* Layout */
+    .layout { max-width:1280px; margin:0 auto; padding:24px; display:grid; grid-template-columns:1fr 380px; gap:24px; align-items:start }
+    .layout.single { grid-template-columns:1fr }
+    @media(max-width:1024px){ .layout { grid-template-columns:1fr } }
+
+    /* Shared */
+    .card { background:var(--surface); border-radius:var(--radius); padding:20px 24px; box-shadow:var(--shadow); border:1px solid var(--border); margin-bottom:20px }
+    .card-title { font-size:14px; font-weight:700; margin-bottom:16px; display:flex; align-items:center; gap:8px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-secondary) }
+    .btn { padding:8px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:all .15s; font-family:var(--font); display:inline-flex; align-items:center; gap:6px }
+    .btn-primary { background:var(--accent); color:#fff } .btn-primary:hover { background:#1d4ed8 }
+    .btn-success { background:var(--primary); color:#fff } .btn-success:hover { background:var(--primary-dark) }
+    .btn-warning { background:var(--warning); color:#fff } .btn-warning:hover { background:#d97706 }
+    .btn-danger { background:var(--danger); color:#fff } .btn-danger:hover { background:#dc2626 }
+    .btn-outline { background:var(--surface); border:1px solid var(--border); color:var(--text-secondary) } .btn-outline:hover { background:var(--surface-hover) }
+    .btn-sm { padding:5px 12px; font-size:12px }
+
+    /* Auth */
+    .auth-card { background:var(--surface); border-radius:var(--radius); padding:40px 32px; box-shadow:var(--shadow-md); max-width:420px; margin:80px auto; border:1px solid var(--border) }
+    .auth-card h2 { font-size:22px; font-weight:700; margin-bottom:4px }
+    .auth-card .sub { color:var(--text-secondary); font-size:14px; margin-bottom:28px }
+    .field { margin-bottom:16px }
+    .field label { display:block; font-size:12px; font-weight:700; color:var(--text-secondary); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px }
+    .field input, .field select { width:100%; padding:10px 14px; border:1px solid var(--border); border-radius:6px; font-size:14px; font-family:var(--font); outline:none; transition:border-color .15s }
+    .field input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light) }
+
+    /* Stat row */
+    .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px }
+    @media(max-width:768px){ .stat-grid { grid-template-columns:repeat(2,1fr) } }
+    .stat-card { background:var(--surface); border-radius:var(--radius); padding:18px 20px; border:1px solid var(--border); box-shadow:var(--shadow) }
+    .stat-card .stat-val { font-size:26px; font-weight:800; letter-spacing:-0.5px; line-height:1 }
+    .stat-card .stat-lbl { font-size:12px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.5px }
+
+    /* Pile grid */
+    .pile-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px }
+    .pile-card { background:var(--surface); border-radius:var(--radius); padding:18px; border:2px solid var(--border); cursor:pointer; transition:all .15s; position:relative }
+    .pile-card:hover { border-color:var(--accent); box-shadow:var(--shadow-md); transform:translateY(-1px) }
+    .pile-card.active { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light) }
+    .pile-card .pile-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
+    .pile-card .pile-id { font-weight:800; font-size:17px }
+    .pile-card .pile-mode { font-size:11px; padding:3px 8px; border-radius:12px; font-weight:600 }
+    .pile-mode-F { background:var(--accent-light); color:var(--accent) }
+    .pile-mode-T { background:#ede9fe; color:#7c3aed }
+
+    /* Status dot */
+    .status-dot { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600 }
+    .status-dot::before { content:''; width:7px; height:7px; border-radius:50%; flex-shrink:0 }
+    .status-available::before { background:#16a34a }
+    .status-charging::before { background:#2563eb; animation:pulse 1.5s infinite }
+    .status-standby::before { background:#f59e0b }
+    .status-off::before { background:#9ca3af }
+    .status-fault::before { background:#ef4444 }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .pile-meta { display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px; color:var(--text-secondary); margin-top:12px; padding-top:12px; border-top:1px solid var(--border) }
+    .pile-meta div span { display:block; font-weight:700; color:var(--text); font-size:14px }
+
+    /* Detail panel */
+    .detail-panel { background:var(--surface); border-radius:var(--radius); border:1px solid var(--border); box-shadow:var(--shadow) }
+    .detail-panel .panel-header { padding:18px 22px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center }
+    .detail-panel .panel-title { font-weight:700; font-size:16px }
+    .detail-panel .panel-body { padding:18px 22px }
+    .action-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px }
+    .vehicle-row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); font-size:13px }
+    .vehicle-row:last-child { border-bottom:none }
+
+    /* Pricing config */
+    .pricing-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; align-items:end }
+    @media(max-width:768px){ .pricing-grid { grid-template-columns:repeat(2,1fr) } }
+    .pricing-grid .field { margin-bottom:0 }
+
+    /* Table */
+    .tbl { width:100%; border-collapse:collapse; font-size:13px }
+    .tbl th { text-align:left; padding:10px 12px; background:var(--surface-hover); font-weight:700; color:var(--text-secondary); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; border-bottom:2px solid var(--border) }
+    .tbl td { padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text) }
+    .tbl tr:hover td { background:var(--surface-hover) }
+
+    /* Fault list */
+    .fault-item { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); font-size:13px }
+    .fault-item:last-child { border-bottom:none }
+    .fault-active { color:var(--danger); font-weight:600 }
+    .fault-resolved { color:var(--text-muted) }
+
+    .empty { text-align:center; padding:28px; color:var(--text-muted); font-size:13px }
+    .mb-12 { margin-bottom:12px }
+    .mt-12 { margin-top:12px }
+    .gap-8 { display:flex; gap:8px }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-logo"><span class="dot"></span> EV Charge · 管理控制台</div>
+    <div class="nav-right" v-if="token">
+      <span>{{ carId }}</span>
+      <button class="btn-logout" @click="logout">退出登录</button>
+    </div>
+  </nav>
+
+  <!-- Auth -->
+  <div v-if="!token">
+    <div class="auth-card">
+      <h2>{{ adminIsLogin ? '管理员登录' : '注册管理员' }}</h2>
+      <p class="sub">{{ adminIsLogin ? '请输入管理员账号密码' : '填写信息创建管理员账号' }}</p>
+      <div class="field"><label>账号</label><input v-model="authForm.car_id" placeholder="管理员账号" @keyup.enter="adminIsLogin ? doLogin() : doRegisterAdmin()"></div>
+      <div class="field" v-if="!adminIsLogin"><label>用户名</label><input v-model="authForm.user_name" placeholder="管理员名称" @keyup.enter="doRegisterAdmin()"></div>
+      <div class="field"><label>密码</label><input v-model="authForm.password" type="password" placeholder="密码" @keyup.enter="adminIsLogin ? doLogin() : doRegisterAdmin()"></div>
+      <div class="field" v-if="!adminIsLogin"><label>确认密码</label><input v-model="authForm.confirm_password" type="password" placeholder="再次输入密码" @keyup.enter="doRegisterAdmin()"></div>
+      <button v-if="adminIsLogin" class="btn btn-primary" style="width:100%;justify-content:center" @click="doLogin">登录</button>
+      <button v-if="!adminIsLogin" class="btn btn-primary" style="width:100%;justify-content:center" @click="doRegisterAdmin">注册</button>
+      <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-secondary)">
+        {{ adminIsLogin ? '没有账号？' : '已有账号？' }}
+        <a style="color:var(--accent);cursor:pointer;font-weight:500" @click="adminIsLogin=!adminIsLogin">{{ adminIsLogin ? '注册管理员' : '去登录' }}</a>
+      </p>
+      <p style="text-align:center;margin-top:12px"><a href="/" style="color:var(--text-muted);font-size:13px;text-decoration:none">&larr; 返回首页</a></p>
+    </div>
+  </div>
+
+  <div v-if="token">
+    <!-- Stats -->
+    <div class="stat-grid" style="max-width:1280px;margin:0 auto;padding:24px 24px 0">
+      <div class="stat-card">
+        <div class="stat-val" style="color:var(--accent)">{{ piles.length }}</div>
+        <div class="stat-lbl">充电桩总数</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" style="color:var(--primary)">{{ piles.filter(p=>p.status==='available').length }}</div>
+        <div class="stat-lbl">可用充电桩</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" style="color:var(--warning)">{{ piles.filter(p=>p.status==='charging').length }}</div>
+        <div class="stat-lbl">充电中</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" style="color:var(--danger)">{{ piles.filter(p=>p.status==='fault').length }}</div>
+        <div class="stat-lbl">故障</div>
+      </div>
+    </div>
+
+    <div class="layout" :class="{ single: !selectedPile }">
+      <!-- Main Column -->
+      <div>
+        <!-- Pile Grid -->
+        <div class="card">
+          <div class="card-title">充电桩实时状态</div>
+          <div class="pile-grid">
+            <div v-for="p in piles" :key="p.pile_id" class="pile-card" :class="{ active: selectedPile === p.pile_id }" @click="selectPile(p.pile_id)">
+              <div class="pile-header">
+                <span class="pile-id">#{{ p.pile_id }}</span>
+                <span class="pile-mode" :class="'pile-mode-'+p.mode">{{ p.mode_label }}</span>
+              </div>
+              <span class="status-dot" :class="'status-'+p.status">{{ statusMap[p.status] }}</span>
+              <div class="pile-meta">
+                <div>功率<span>{{ p.power }} kW</span></div>
+                <div>队列<span>{{ p.queue_used }}/{{ p.queue_total }}</span></div>
+                <div>充电次数<span>{{ p.total_charge_num }}</span></div>
+                <div>充电量<span>{{ p.total_charge_capacity?.toFixed(0) }} 度</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Waiting Area -->
+        <div class="card">
+          <div class="card-title">等候区 <span style="font-weight:400;font-size:12px;color:var(--text-muted);text-transform:none;letter-spacing:0">（共享池 · 容量 {{ waitingArea.capacity }}）</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+            <div style="background:var(--surface-hover);border-radius:8px;padding:12px;text-align:center">
+              <span style="font-size:22px;font-weight:800;color:var(--accent)">{{ waitingArea.fast_waiting }}</span>
+              <span style="font-size:12px;color:var(--text-muted);margin-left:4px">辆快充等候</span>
+            </div>
+            <div style="background:var(--surface-hover);border-radius:8px;padding:12px;text-align:center">
+              <span style="font-size:22px;font-weight:800;color:#7c3aed">{{ waitingArea.slow_waiting }}</span>
+              <span style="font-size:12px;color:var(--text-muted);margin-left:4px">辆慢充等候</span>
+            </div>
+          </div>
+          <div v-if="(waitingArea.vehicles||[]).length === 0" class="empty">暂无等候车辆</div>
+          <div v-for="v in (waitingArea.vehicles||[])" :key="v.car_id+v.queue_num" class="vehicle-row">
+            <div>
+              <div style="font-weight:600">{{ v.car_id }} · {{ v.queue_num }}</div>
+              <div style="color:var(--text-muted);font-size:12px">{{ v.mode_label }} · 请求 {{ v.request_amount }} 度</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reports -->
+        <div class="card">
+          <div class="card-title">运营报表</div>
+          <div class="gap-8 mb-12">
+            <select v-model="reportPeriod" style="padding:7px 14px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:var(--font)">
+              <option value="day">按日</option><option value="week">按周</option><option value="month">按月</option>
+            </select>
+            <input type="date" v-model="reportDate" style="padding:7px 14px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:var(--font)" @change="loadReport">
+            <button class="btn btn-outline btn-sm" @click="loadReport">查询</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl">
+              <thead><tr><th>桩号</th><th>类型</th><th>充电次数</th><th>充电时长(h)</th><th>充电量(度)</th><th>充电费</th><th>服务费</th><th>总费用</th></tr></thead>
+              <tbody>
+                <tr v-for="r in reportData" :key="r.pile_id">
+                  <td><strong>#{{ r.pile_id }}</strong></td><td>{{ r.mode }}</td><td>{{ r.charge_count }}</td>
+                  <td>{{ r.charge_time }}</td><td>{{ r.charge_amount }}</td>
+                  <td>&yen;{{ r.charge_fee }}</td><td>&yen;{{ r.service_fee }}</td>
+                  <td style="font-weight:700">&yen;{{ r.total_fee }}</td>
+                </tr>
+                <tr v-if="reportData.length===0"><td colspan="8" class="empty">选择日期查询报表</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail Panel -->
+      <div v-if="selectedPile">
+        <div class="detail-panel">
+          <div class="panel-header">
+            <span class="panel-title">充电桩 #{{ selectedPile }}</span>
+            <button class="btn btn-outline btn-sm" @click="selectedPile=null">&times;</button>
+          </div>
+          <div class="panel-body">
+            <div class="action-row">
+              <button class="btn btn-success btn-sm" @click="powerOn(selectedPile)">启动</button>
+              <button class="btn btn-primary btn-sm" @click="startPile(selectedPile)">投入运行</button>
+              <button class="btn btn-warning btn-sm" @click="powerOff(selectedPile)">关闭</button>
+              <button class="btn btn-danger btn-sm" @click="reportFault(selectedPile)">上报故障</button>
+              <button class="btn btn-success btn-sm" @click="recoverFault(selectedPile)">故障恢复</button>
+            </div>
+
+            <!-- 充电队列：正在充电的车 -->
+            <div class="card-title mt-12">充电队列</div>
+            <div v-if="chargingVehicles.length === 0" class="empty">暂无充电车辆</div>
+            <div v-for="v in chargingVehicles" :key="v.request_id" class="vehicle-row">
+              <div style="flex:1">
+                <div style="font-weight:600;display:flex;align-items:center;gap:8px">
+                  {{ v.car_id }}
+                  <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--primary-light);color:var(--primary-dark)">充电中</span>
+                </div>
+                <div style="color:var(--text-muted);font-size:12px">
+                  排队号 {{ v.queue_num }} · 请求 {{ v.request_amount }} 度 · 进度 {{ v.progress }}%
+                </div>
+                <div style="margin-top:4px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+                  <div :style="{width:v.progress+'%',height:'100%',background:'var(--primary)',borderRadius:'2px',transition:'width 1s'}"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 桩内排队：已调度到该桩但未开始充电的车 -->
+            <div class="card-title mt-12">桩内排队 · {{ waitingVehicles.length }}/{{ pileMaxCapacity - chargingVehicles.length }} 位</div>
+            <div v-if="waitingVehicles.length === 0" class="empty">暂无等候车辆</div>
+            <div v-for="v in waitingVehicles" :key="v.request_id" class="vehicle-row">
+              <div style="flex:1">
+                <div style="font-weight:600;display:flex;align-items:center;gap:8px">
+                  #{{ v.position }} · {{ v.car_id }}
+                  <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#f0f0f0;color:#888">等待中</span>
+                </div>
+                <div style="color:var(--text-muted);font-size:12px">
+                  排队号 {{ v.queue_num }} · 请求 {{ v.request_amount }} 度
+                </div>
+              </div>
+            </div>
+
+            <!-- Faults -->
+            <div class="card-title mt-12">故障记录</div>
+            <div v-if="faults.length===0" class="empty">暂无故障</div>
+            <div v-for="f in faults" :key="f.fault_id" class="fault-item">
+              <div>
+                <div>桩 #{{ f.pile_id }} · {{ f.fault_time?.replace('T',' ') }}</div>
+                <div :class="f.status==='active'?'fault-active':'fault-resolved'">
+                  {{ f.status==='active' ? '进行中' : '已恢复' }}
+                  <span v-if="f.recover_time"> · 恢复于 {{ f.recover_time?.replace('T',' ') }}</span>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-outline btn-sm mt-12" @click="loadFaults">刷新</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Global config cards (always visible) -->
+    <div v-if="token" style="max-width:1280px;margin:0 auto;padding:0 24px 24px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <!-- System Config -->
+      <div class="card">
+        <div class="card-title">系统参数 <span style="font-weight:400;font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0">（修改 backend/config.py 后重启生效）</span></div>
+        <div class="pricing-grid">
+          <div class="field"><label>快充桩数</label><input type="number" v-model.number="sysConfig.fast_pile_num" disabled></div>
+          <div class="field"><label>慢充桩数</label><input type="number" v-model.number="sysConfig.slow_pile_num" disabled></div>
+          <div class="field"><label>等候区容量 N</label><input type="number" v-model.number="sysConfig.waiting_area_size" disabled></div>
+          <div class="field"><label>桩队列长度 M</label><input type="number" v-model.number="sysConfig.charging_queue_len" disabled></div>
+        </div>
+      </div>
+
+      <!-- Fast Pricing -->
+      <div class="card">
+        <div class="card-title">快充计费 (F)</div>
+        <div class="pricing-grid">
+          <div class="field"><label>峰时电价</label><input v-model="pricingForm.fast.peak" type="number" step="0.01"></div>
+          <div class="field"><label>平时电价</label><input v-model="pricingForm.fast.mid" type="number" step="0.01"></div>
+          <div class="field"><label>谷时电价</label><input v-model="pricingForm.fast.off_peak" type="number" step="0.01"></div>
+          <div class="field"><label>服务费</label><input v-model="pricingForm.fast.service" type="number" step="0.01"></div>
+        </div>
+        <button class="btn btn-primary btn-sm mt-12" @click="savePricing('F')">保存快充</button>
+      </div>
+
+      <!-- Slow Pricing -->
+      <div class="card">
+        <div class="card-title">慢充计费 (T)</div>
+        <div class="pricing-grid">
+          <div class="field"><label>峰时电价</label><input v-model="pricingForm.slow.peak" type="number" step="0.01"></div>
+          <div class="field"><label>平时电价</label><input v-model="pricingForm.slow.mid" type="number" step="0.01"></div>
+          <div class="field"><label>谷时电价</label><input v-model="pricingForm.slow.off_peak" type="number" step="0.01"></div>
+          <div class="field"><label>服务费</label><input v-model="pricingForm.slow.service" type="number" step="0.01"></div>
+        </div>
+        <button class="btn btn-primary btn-sm mt-12" @click="savePricing('T')">保存慢充</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue
+const API = '/api'
+
+axios.interceptors.response.use(
+  r => r,
+  err => {
+    if (err.response && (err.response.status === 401 || err.response.status === 422)) {
+      localStorage.clear()
+      location.reload()
+    }
+    return Promise.reject(err)
+  }
+)
+
+createApp({
+  data() {
+    return {
+      token: localStorage.getItem('admin_token') || '',
+      carId: localStorage.getItem('admin_car_id') || '',
+      adminIsLogin: true,
+      authForm: { car_id:'', user_name:'', password:'', confirm_password:'' },
+      piles: [], selectedPile: null, pileVehicles: [],
+      pollTimer: null, faults: [], waitingArea: { capacity: 0, fast_waiting: 0, slow_waiting: 0 },
+      sysConfig: { fast_pile_num:2, slow_pile_num:3, waiting_area_size:10, charging_queue_len:5, fault_strategy:'priority' },
+      pricingForm: { fast:{peak:1.0,mid:0.7,off_peak:0.4,service:0.8}, slow:{peak:0.8,mid:0.5,off_peak:0.3,service:0.6} },
+      reportPeriod: 'day', reportDate: '', reportData: [],
+      statusMap: { off:'关闭', standby:'待机', available:'可用', charging:'充电中', fault:'故障' },
+    }
+  },
+  computed: {
+    pileMaxCapacity() {
+      if (!this.selectedPile) return 0
+      return this.piles.find(p => p.pile_id === this.selectedPile)?.queue_total || 0
+    },
+    chargingVehicles() {
+      return this.pileVehicles.filter(v => v.status === 'charging')
+    },
+    waitingVehicles() {
+      return this.pileVehicles.filter(v => v.status !== 'charging')
+    },
+  },
+  mounted() { if(this.token) { axios.defaults.headers.common['Authorization']='Bearer '+this.token; this.startAll() } },
+  methods: {
+    async doLogin() {
+      try {
+        const r = await axios.post(API+'/auth/login', this.authForm)
+        if(r.data.code===0) { this.setAuth(r.data.data); this.startAll() }
+        else this.toast(r.data.message, 'error')
+      } catch(e) { this.toast('登录失败', 'error') }
+    },
+    async doRegisterAdmin() {
+      if (!this.authForm.car_id || !this.authForm.user_name || !this.authForm.password) {
+        this.toast('请填写所有字段', 'error'); return
+      }
+      if (this.authForm.password !== this.authForm.confirm_password) {
+        this.toast('两次密码不一致', 'error'); return
+      }
+      try {
+        const r = await axios.post(API+'/auth/register', { car_id:this.authForm.car_id, user_name:this.authForm.user_name, car_capacity:1, password:this.authForm.password, role:'admin' })
+        if(r.data.code===0) { this.toast('注册成功，请登录'); this.adminIsLogin = true }
+        else this.toast(r.data.message, 'error')
+      } catch(e) { this.toast('网络错误', 'error') }
+    },
+    setAuth(d) {
+      this.token = d.access_token; this.carId = d.car_id
+      localStorage.setItem('admin_token', d.access_token); localStorage.setItem('admin_car_id', d.car_id)
+      axios.defaults.headers.common['Authorization'] = 'Bearer '+d.access_token
+    },
+    logout() {
+      localStorage.removeItem('admin_token'); localStorage.removeItem('admin_car_id')
+      this.token = ''; this.piles = []; if(this.pollTimer) clearInterval(this.pollTimer)
+    },
+    startAll() {
+      this.loadPiles(); this.loadFaults(); this.loadWaitingArea(); this.loadSysConfig(); this.loadPricing()
+      this.pollTimer = setInterval(() => { this.loadPiles(); this.loadWaitingArea(); if(this.selectedPile) this.selectPile(this.selectedPile) }, 5000)
+    },
+    async loadSysConfig() {
+      try { const r = await axios.get(API+'/admin/system-config'); if(r.data.code===0) this.sysConfig = r.data.data } catch(e) {}
+    },
+    async loadPiles() {
+      try { const r = await axios.get(API+'/pile/status'); if(r.data.code===0) this.piles = r.data.data } catch(e) {}
+    },
+    async selectPile(id) {
+      this.selectedPile = id
+      try { const r = await axios.get(API+'/queue/pile/'+id); if(r.data.code===0) this.pileVehicles = r.data.data } catch(e) {}
+    },
+    async powerOn(id) { await axios.post(API+'/pile/'+id+'/poweron'); this.loadPiles(); this.toast('已启动') },
+    async startPile(id) { await axios.post(API+'/pile/'+id+'/start'); this.loadPiles(); this.toast('已投入运行') },
+    async powerOff(id) {
+      const r = await axios.post(API+'/pile/'+id+'/poweroff')
+      if(r.data.code===0) { this.loadPiles(); this.toast('已关闭') } else this.toast(r.data.message, 'error')
+    },
+    async reportFault(id) {
+      const r = await axios.post(API+'/admin/fault/report',{pile_id:id})
+      if(r.data.code===0) { this.loadPiles(); this.loadFaults(); this.toast('已上报故障') } else this.toast(r.data.message, 'error')
+    },
+    async recoverFault(id) {
+      const r = await axios.post(API+'/admin/fault/recover',{pile_id:id})
+      if(r.data.code===0) { this.loadPiles(); this.loadFaults(); this.toast('故障已恢复') } else this.toast(r.data.message, 'error')
+    },
+    async loadPricing() {
+      try {
+        const r = await axios.get(API+'/pile/parameters')
+        if(r.data.code===0 && r.data.data) {
+          const d = r.data.data
+          if(d.fast) this.pricingForm.fast = {peak:d.fast.peak_price, mid:d.fast.mid_price, off_peak:d.fast.off_peak_price, service:d.fast.service_fee_rate}
+          if(d.slow) this.pricingForm.slow = {peak:d.slow.peak_price, mid:d.slow.mid_price, off_peak:d.slow.off_peak_price, service:d.slow.service_fee_rate}
+        }
+      } catch(e) {}
+    },
+    async savePricing(mode) {
+      const f = mode==='F' ? this.pricingForm.fast : this.pricingForm.slow
+      try {
+        await axios.put(API+'/pile/parameters', { mode, peak_price:Number(f.peak), mid_price:Number(f.mid), off_peak_price:Number(f.off_peak), service_fee_rate:Number(f.service) })
+        this.toast((mode==='F'?'快充':'慢充')+'参数已保存')
+      } catch(e) {}
+    },
+    async loadReport() {
+      const d = this.reportDate || new Date().toISOString().slice(0,10)
+      try { const r = await axios.get(API+'/admin/report/stats',{params:{period:this.reportPeriod, date:d}}); if(r.data.code===0) this.reportData = r.data.data?.piles||[] } catch(e) {}
+    },
+    async loadFaults() {
+      try { const r = await axios.get(API+'/admin/fault/list'); if(r.data.code===0) this.faults = r.data.data||[] } catch(e) {}
+    },
+    async loadWaitingArea() {
+      try {
+        const r = await axios.get(API+'/admin/waiting-area')
+        if(r.data.code===0) this.waitingArea = r.data.data
+      } catch(e) {}
+    },
+    toast(msg, type) {
+      const c = type==='error'?'var(--danger)':'var(--primary)'
+      const el = document.createElement('div')
+      el.textContent = msg
+      Object.assign(el.style, { position:'fixed',top:'20px',left:'50%',transform:'translateX(-50%)',padding:'10px 24px',borderRadius:'8px',background:'var(--surface)',color:c,fontWeight:'600',fontSize:'14px',boxShadow:'0 8px 32px rgba(0,0,0,0.12)',zIndex:'999',border:'1px solid var(--border)' })
+      document.body.appendChild(el)
+      setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300) }, 2000)
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>
