@@ -136,11 +136,21 @@ class BillDAO:
         return db.session.get(Bill, bill_id)
 
     @staticmethod
+    def find_by_car(car_id):
+        return (
+            Bill.query
+            .filter_by(car_id=car_id)
+            .order_by(Bill.create_time.desc(), Bill.bill_id.desc())
+            .all()
+        )
+
+    @staticmethod
     def find_by_car_and_date(car_id, date_str):
         return (
             Bill.query
             .filter_by(car_id=car_id)
             .filter(db.func.date(Bill.create_time) == date_str)
+            .order_by(Bill.create_time.desc(), Bill.bill_id.desc())
             .all()
         )
 

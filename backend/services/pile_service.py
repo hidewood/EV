@@ -53,7 +53,7 @@ class PileService:
 
     @staticmethod
     def query_all_piles():
-        piles = [p for p in ChargingPileDAO.find_all() if p.status != "off"]
+        piles = ChargingPileDAO.find_all()
         result = []
         for p in piles:
             count = PileQueueDAO.get_count_by_pile(p.pile_id)

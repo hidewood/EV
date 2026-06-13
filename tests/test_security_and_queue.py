@@ -258,6 +258,118 @@ class SecurityAndQueueTest(unittest.TestCase):
         self.assertEqual(pricing["data"]["slow"]["off_peak_price"], 0.4)
         self.assertEqual(pricing["data"]["slow"]["service_fee_rate"], 0.8)
 
+    def test_bill_list_without_date_returns_all_user_bills(self):
+        from datetime import datetime
+
+        self.assertEqual(self.register_user("U1")["code"], 0)
+        token = self.login("U1")
+
+        with self.app.app_context():
+            from backend.models import db
+            from backend.models.charging_request import ChargingRequest
+            from backend.models.charging_session import ChargingSession
+            from backend.models.charging_detail import ChargingDetail
+            from backend.models.bill import Bill
+
+            for idx, created_at in enumerate((
+                datetime(2026, 6, 10, 10, 0, 0),
+                datetime(2026, 6, 11, 10, 0, 0),
+            ), start=1):
+                req = ChargingRequest(
+                    car_id="U1",
+                    request_mode="F",
+                    request_amount=10,
+                    queue_num=f"F{idx}",
+                    status="completed",
+                )
+                db.session.add(req)
+                db.session.flush()
+                session = ChargingSession(
+                    request_id=req.request_id,
+                    car_id="U1",
+                    pile_id=1,
+                    start_time=created_at,
+                    end_time=created_at,
+                    status="completed",
+                )
+                db.session.add(session)
+                db.session.flush()
+                detail = ChargingDetail(
+                    session_id=session.session_id,
+                    car_id="U1",
+                    pile_id=1,
+                    charge_amount=10,
+                    charge_duration=0.33,
+                    start_time=created_at,
+                    stop_time=created_at,
+                    charge_fee=10,
+                    service_fee=8,
+                    total_fee=18,
+                    created_at=created_at,
+                )
+                db.session.add(detail)
+                db.session.flush()
+                db.session.add(Bill(
+                    detail_id=detail.detail_id,
+                    car_id="U1",
+                    total_charge_fee=10,
+                    total_service_fee=8,
+                    total_fee=18,
+                    create_time=created_at,
+                ))
+            db.session.commit()
+
+        all_bills = self.get("/api/bill/list", token)
+        self.assertEqual(all_bills["code"], 0)
+        self.assertEqual(len(all_bills["data"]), 2)
+
+        dated_bills = self.get("/api/bill/list?date=2026-06-10", token)
+        self.assertEqual(dated_bills["code"], 0)
+        self.assertEqual(len(dated_bills["data"]), 1)
+
+    def test_admin_pile_status_includes_off_piles(self):
+        admin_token = self.register_admin_and_login()
+
+        with self.app.app_context():
+            from backend.models import db
+            from backend.models.charging_pile import ChargingPile
+
+            db.session.add(ChargingPile(
+                pile_id=2,
+                mode="F",
+                power=30.0,
+                status="off",
+                queue_len=5,
+            ))
+            db.session.commit()
+
+        resp = self.get("/api/pile/status", admin_token)
+        self.assertEqual(resp["code"], 0)
+        statuses = {p["pile_id"]: p["status"] for p in resp["data"]}
+        self.assertEqual(statuses[1], "available")
+        self.assertEqual(statuses[2], "off")
+
+    def test_pricing_splits_peak_mid_and_off_peak_boundaries(self):
+        from datetime import datetime
+        from backend.models.pricing_rule import PricingRule
+        from backend.utils.pricing import calculate_charge_fee, calculate_service_fee
+
+        pricing = PricingRule(
+            mode="F",
+            peak_price=1.0,
+            mid_price=0.7,
+            off_peak_price=0.4,
+            service_fee_rate=0.8,
+        )
+
+        mid_to_peak = calculate_charge_fee(30, 30, datetime(2026, 6, 13, 9, 30, 0), pricing)
+        self.assertEqual(mid_to_peak, 25.5)
+
+        mid_to_off_peak = calculate_charge_fee(30, 30, datetime(2026, 6, 13, 22, 30, 0), pricing)
+        self.assertEqual(mid_to_off_peak, 16.5)
+
+        self.assertEqual(calculate_service_fee(30, pricing), 24.0)
+
     def test_power_off_rejects_pile_with_queued_vehicle(self):
         admin_token = self.register_admin_and_login()
         self.assertEqual(self.register_user("U1")["code"], 0)

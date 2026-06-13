@@ -210,7 +210,9 @@
           <div v-for="v in (waitingArea.vehicles||[])" :key="v.car_id+v.queue_num" class="vehicle-row">
             <div>
               <div style="font-weight:600">{{ v.car_id }} · {{ v.queue_num }}</div>
-              <div style="color:var(--text-muted);font-size:12px">{{ v.mode_label }} · 请求 {{ v.request_amount }} 度</div>
+              <div style="color:var(--text-muted);font-size:12px">
+                {{ v.mode_label }} · 电池 {{ v.car_capacity }} 度 · 请求 {{ v.request_amount }} 度 · 等待 {{ v.wait_minutes }} 分钟
+              </div>
             </div>
           </div>
         </div>
@@ -268,7 +270,7 @@
                   <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--primary-light);color:var(--primary-dark)">充电中</span>
                 </div>
                 <div style="color:var(--text-muted);font-size:12px">
-                  排队号 {{ v.queue_num }} · 请求 {{ v.request_amount }} 度 · 进度 {{ v.progress }}%
+                  排队号 {{ v.queue_num }} · 电池 {{ v.car_capacity }} 度 · 请求 {{ v.request_amount }} 度 · 等待 {{ v.wait_minutes }} 分钟 · 进度 {{ v.progress }}%
                 </div>
                 <div style="margin-top:4px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
                   <div :style="{width:v.progress+'%',height:'100%',background:'var(--primary)',borderRadius:'2px',transition:'width 1s'}"></div>
@@ -286,7 +288,7 @@
                   <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#f0f0f0;color:#888">等待中</span>
                 </div>
                 <div style="color:var(--text-muted);font-size:12px">
-                  排队号 {{ v.queue_num }} · 请求 {{ v.request_amount }} 度
+                  排队号 {{ v.queue_num }} · 电池 {{ v.car_capacity }} 度 · 请求 {{ v.request_amount }} 度 · 等待 {{ v.wait_minutes }} 分钟
                 </div>
               </div>
             </div>

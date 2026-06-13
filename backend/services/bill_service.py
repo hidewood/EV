@@ -9,7 +9,7 @@ class BillService:
         if date_str:
             bills = BillDAO.find_by_car_and_date(car_id, date_str)
         else:
-            bills = BillDAO.find_by_car_and_date(car_id, local_now().strftime("%Y-%m-%d"))
+            bills = BillDAO.find_by_car(car_id)
         result = []
         for b in bills:
             result.append({
