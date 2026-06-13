@@ -1,5 +1,5 @@
 from . import db
-from datetime import datetime
+from ..utils.timezone import local_now
 
 
 class PricingRule(db.Model):
@@ -10,4 +10,4 @@ class PricingRule(db.Model):
     mid_price = db.Column(db.Float, default=0.7)
     off_peak_price = db.Column(db.Float, default=0.4)
     service_fee_rate = db.Column(db.Float, default=0.8)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=local_now)

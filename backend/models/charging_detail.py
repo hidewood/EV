@@ -1,5 +1,5 @@
 from . import db
-from datetime import datetime
+from ..utils.timezone import local_now
 
 
 class ChargingDetail(db.Model):
@@ -15,4 +15,4 @@ class ChargingDetail(db.Model):
     charge_fee = db.Column(db.Float, default=0.0)
     service_fee = db.Column(db.Float, default=0.0)
     total_fee = db.Column(db.Float, default=0.0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=local_now)

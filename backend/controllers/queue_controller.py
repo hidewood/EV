@@ -1,5 +1,6 @@
 from flask import Blueprint, request
-from flask_jwt_extended import jwt_required
+from ..utils.timezone import local_now
+from ..utils.auth import admin_required
 from ..services.queue_service import QueueService
 from ..utils.errors import success
 
@@ -7,7 +8,7 @@ bp = Blueprint("queue", __name__)
 
 
 @bp.route("/waiting", methods=["GET"])
-@jwt_required()
+@admin_required
 def waiting_queue():
     mode = request.args.get("mode", "F")
     result = QueueService.get_waiting_queue_list(mode)
@@ -15,7 +16,7 @@ def waiting_queue():
 
 
 @bp.route("/pile/<int:pile_id>", methods=["GET"])
-@jwt_required()
+@admin_required
 def pile_queue(pile_id):
     from ..dao.pile_queue_dao import PileQueueDAO
     from ..dao.user_dao import ChargingRequestDAO, ChargingSessionDAO, UserDAO
@@ -33,8 +34,7 @@ def pile_queue(pile_id):
         session = ChargingSessionDAO.find_active_by_car_id(req.car_id)
         progress = 0.0
         if session and req.status == "charging" and req.request_amount > 0:
-            from datetime import datetime
-            elapsed = (datetime.utcnow() - session.start_time).total_seconds() / 3600
+            elapsed = (local_now() - session.start_time).total_seconds() / 3600
             charged = round(min(elapsed * pile.power, req.request_amount), 2) if pile else 0
             progress = round(min(charged / req.request_amount * 100, 100), 1)
 
@@ -47,5 +47,6 @@ def pile_queue(pile_id):
             "queue_num": req.queue_num,
             "status": req.status,
             "progress": progress,
+            "wait_minutes": round((local_now() - e.enter_time).total_seconds() / 60, 1),
         })
     return success(vehicles)

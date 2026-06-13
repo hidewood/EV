@@ -31,6 +31,10 @@ class WaitingQueueDAO:
         return WaitingQueue.query.filter_by(mode=mode).count()
 
     @staticmethod
+    def get_total_count():
+        return WaitingQueue.query.count()
+
+    @staticmethod
     def get_front_count(request_id):
         entry = WaitingQueue.query.filter_by(request_id=request_id).first()
         if not entry:

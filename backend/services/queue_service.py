@@ -2,6 +2,7 @@ from ..dao.queue_dao import WaitingQueueDAO
 from ..dao.pile_dao import ChargingPileDAO
 from ..dao.pile_queue_dao import PileQueueDAO
 from ..models.waiting_queue import WaitingQueue
+from ..utils.timezone import local_now
 
 
 class QueueService:
@@ -12,10 +13,19 @@ class QueueService:
 
     @staticmethod
     def add_to_waiting(request_id, mode):
-        max_num = WaitingQueueDAO.get_max_queue_num(mode)
-        queue_num = f"{mode}{max_num + 1}"
+        from ..dao.user_dao import ChargingRequestDAO
+        queue_num = f"{mode}{ChargingRequestDAO.get_max_queue_num_by_mode(mode) + 1}"
         WaitingQueueDAO.add(request_id, mode, queue_num)
         return queue_num
+
+    @staticmethod
+    def waiting_area_has_slot():
+        from ..config import SYSTEM_CONFIG
+        return WaitingQueueDAO.get_total_count() < SYSTEM_CONFIG["WaitingAreaSize"]
+
+    @staticmethod
+    def waiting_area_count():
+        return WaitingQueueDAO.get_total_count()
 
     @staticmethod
     def remove_from_waiting(request_id):
@@ -59,6 +69,6 @@ class QueueService:
                 "queue_num": e.queue_num,
                 "request_amount": req.request_amount,
                 "car_capacity": user.car_capacity if user else 0,
-                "wait_minutes": 0,  # simplified
+                "wait_minutes": round((local_now() - e.join_time).total_seconds() / 60, 1),
             })
         return result

@@ -1,5 +1,5 @@
 from . import db
-from datetime import datetime
+from ..utils.timezone import local_now
 
 
 class Bill(db.Model):
@@ -11,5 +11,5 @@ class Bill(db.Model):
     total_service_fee = db.Column(db.Float, default=0.0)
     total_fee = db.Column(db.Float, default=0.0)
     status = db.Column(db.Enum("unpaid", "paid"), default="unpaid")
-    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+    create_time = db.Column(db.DateTime, default=local_now)
     pay_time = db.Column(db.DateTime, nullable=True)

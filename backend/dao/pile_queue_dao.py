@@ -13,9 +13,12 @@ class PileQueueDAO:
     @staticmethod
     def remove_by_request_id(request_id):
         entries = PileQueue.query.filter_by(request_id=request_id).all()
+        pile_ids = {e.pile_id for e in entries}
         for e in entries:
             db.session.delete(e)
         db.session.flush()
+        for pile_id in pile_ids:
+            PileQueueDAO.compact_positions(pile_id)
 
     @staticmethod
     def get_count_by_pile(pile_id):
@@ -59,4 +62,17 @@ class PileQueueDAO:
     def clear_uncharged_from_pile(pile_id):
         """只清空未开始充电的排队车辆（position > 1），保留正在充电的。"""
         PileQueue.query.filter_by(pile_id=pile_id).filter(PileQueue.position > 1).delete()
+        db.session.flush()
+        PileQueueDAO.compact_positions(pile_id)
+
+    @staticmethod
+    def compact_positions(pile_id):
+        entries = (
+            PileQueue.query
+            .filter_by(pile_id=pile_id)
+            .order_by(PileQueue.position.asc(), PileQueue.id.asc())
+            .all()
+        )
+        for idx, entry in enumerate(entries, start=1):
+            entry.position = idx
         db.session.flush()

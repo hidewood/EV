@@ -355,6 +355,7 @@
     <div class="modal">
       <h3>充电详单</h3>
       <div class="detail-row"><span class="lbl">详单编号</span><span class="val">#{{ currentDetail?.detail_id }}</span></div>
+      <div class="detail-row"><span class="lbl">生成时间</span><span class="val">{{ currentDetail?.created_at?.replace('T',' ') }}</span></div>
       <div class="detail-row"><span class="lbl">充电桩</span><span class="val">#{{ currentDetail?.pile_id }}</span></div>
       <div class="detail-row"><span class="lbl">充电电量</span><span class="val">{{ currentDetail?.charge_amount?.toFixed(2) }} 度</span></div>
       <div class="detail-row"><span class="lbl">充电时长</span><span class="val">{{ currentDetail?.charge_duration?.toFixed(2) }} 小时</span></div>

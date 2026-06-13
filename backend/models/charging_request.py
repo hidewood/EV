@@ -1,5 +1,5 @@
 from . import db
-from datetime import datetime
+from ..utils.timezone import local_now
 
 
 class ChargingRequest(db.Model):
@@ -14,5 +14,5 @@ class ChargingRequest(db.Model):
         default="queuing",
     )
     pile_id = db.Column(db.Integer, db.ForeignKey("charging_pile.pile_id"), nullable=True)
-    request_time = db.Column(db.DateTime, default=datetime.utcnow)
-    modify_time = db.Column(db.DateTime, default=datetime.utcnow)
+    request_time = db.Column(db.DateTime, default=local_now)
+    modify_time = db.Column(db.DateTime, default=local_now)

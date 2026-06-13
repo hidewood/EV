@@ -8,7 +8,7 @@ from ..models.bill import Bill
 from ..models.dispatch_record import DispatchRecord
 from ..services.dispatch_service import DispatchService
 from ..utils.pricing import calculate_charge_fee, calculate_service_fee
-from datetime import datetime, timedelta
+from ..utils.timezone import local_now
 
 
 class ChargingService:
@@ -25,6 +25,12 @@ class ChargingService:
         pile = ChargingPileDAO.find_by_id(pile_id)
         if not pile:
             return None, "pile_not_found"
+        if pile.status not in ("available", "charging"):
+            return None, "pile_unavailable"
+
+        first = PileQueueDAO.get_first(pile_id)
+        if not first or first.request_id != req.request_id:
+            return None, "not_first_in_queue"
 
         session = ChargingSession(
             request_id=req.request_id,
@@ -53,12 +59,13 @@ class ChargingService:
 
         pile = ChargingPileDAO.find_by_id(session.pile_id)
         pricing = PricingRuleDAO.get_by_mode(pile.mode)
-        now = datetime.utcnow()
+        now = local_now()
         start = session.start_time
 
         # 实际充电量：模拟已充到请求量 or 按时间计算
-        actual_hours = (now - start).total_seconds() / 3600
-        actual_amount = round(min(actual_hours * pile.power, req.request_amount), 2)
+        elapsed_hours = (now - start).total_seconds() / 3600
+        actual_amount = round(min(elapsed_hours * pile.power, req.request_amount), 2)
+        actual_hours = actual_amount / pile.power if pile.power else 0.0
 
         charge_fee = calculate_charge_fee(actual_amount, pile.power, start, pricing)
         service_fee = calculate_service_fee(actual_amount, pricing)
@@ -123,9 +130,10 @@ class ChargingService:
         if session:
             pile = ChargingPileDAO.find_by_id(session.pile_id)
             pricing = PricingRuleDAO.get_by_mode(pile.mode)
-            now = datetime.utcnow()
-            actual_hours = (now - session.start_time).total_seconds() / 3600
-            actual_amount = round(min(actual_hours * pile.power, req.request_amount), 2)
+            now = local_now()
+            elapsed_hours = (now - session.start_time).total_seconds() / 3600
+            actual_amount = round(min(elapsed_hours * pile.power, req.request_amount), 2)
+            actual_hours = actual_amount / pile.power if pile.power else 0.0
 
             charge_fee = calculate_charge_fee(actual_amount, pile.power, session.start_time, pricing)
             service_fee = calculate_service_fee(actual_amount, pricing)
@@ -140,7 +148,7 @@ class ChargingService:
                 car_id=session.car_id,
                 pile_id=pile.pile_id,
                 charge_amount=actual_amount,
-                charge_duration=actual_hours,
+                charge_duration=round(actual_hours, 2),
                 start_time=session.start_time,
                 stop_time=now,
                 charge_fee=charge_fee,
@@ -181,8 +189,8 @@ class ChargingService:
         pile = ChargingPileDAO.find_by_id(session.pile_id)
         pricing = PricingRuleDAO.get_by_mode(pile.mode)
 
-        elapsed = (datetime.utcnow() - session.start_time).total_seconds() / 3600
-        estimated_amount = round(elapsed * pile.power, 2)
+        elapsed = (local_now() - session.start_time).total_seconds() / 3600
+        estimated_amount = round(min(elapsed * pile.power, req.request_amount), 2)
         current_fee = calculate_charge_fee(estimated_amount, pile.power, session.start_time, pricing)
         current_service = calculate_service_fee(estimated_amount, pricing)
 
@@ -192,7 +200,7 @@ class ChargingService:
             "pile_power": pile.power,
             "start_time": session.start_time.isoformat(),
             "elapsed_hours": round(elapsed, 2),
-            "estimated_amount": min(estimated_amount, req.request_amount),
+            "estimated_amount": estimated_amount,
             "request_amount": req.request_amount,
             "current_charge_fee": current_fee,
             "current_service_fee": current_service,

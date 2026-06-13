@@ -1,6 +1,6 @@
 from ..dao.user_dao import BillDAO, ChargingDetailDAO, PaymentDAO
 from ..models.payment import Payment
-from datetime import datetime
+from ..utils.timezone import local_now
 
 
 class BillService:
@@ -9,7 +9,7 @@ class BillService:
         if date_str:
             bills = BillDAO.find_by_car_and_date(car_id, date_str)
         else:
-            bills = BillDAO.find_by_car_and_date(car_id, datetime.utcnow().strftime("%Y-%m-%d"))
+            bills = BillDAO.find_by_car_and_date(car_id, local_now().strftime("%Y-%m-%d"))
         result = []
         for b in bills:
             result.append({
@@ -64,7 +64,7 @@ class BillService:
         PaymentDAO.insert(payment)
 
         bill.status = "paid"
-        bill.pay_time = datetime.utcnow()
+        bill.pay_time = local_now()
         BillDAO.update(bill)
 
         return {"payment_id": payment.payment_id, "amount": payment.amount}, None

@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from ..services.request_service import RequestService
 from ..services.charging_service import ChargingService
 from ..utils.errors import success, error
+from ..utils.validators import parse_float, parse_int
 from ..dao.user_dao import UserDAO
 
 bp = Blueprint("charging", __name__)
@@ -21,14 +22,20 @@ def submit_request():
     car_id = get_jwt_identity()
     if not _check_user(car_id):
         return error(2001)
-    data = request.get_json()
-    request_amount = data.get("request_amount", 0)
+    data = request.get_json(silent=True) or {}
+    request_amount = parse_float(data.get("request_amount", 0))
     request_mode = data.get("request_mode", "").strip()
-    if request_amount <= 0 or request_mode not in ("F", "T"):
+    if request_mode not in ("F", "T"):
+        from .. import config
+        if config.EXTENDED_DISPATCH_MODE == "batch_min_total":
+            request_mode = "F"
+    if request_amount is None or request_amount <= 0 or request_mode not in ("F", "T"):
         return error(1001)
-    result, err = RequestService.submit_request(car_id, float(request_amount), request_mode)
+    result, err = RequestService.submit_request(car_id, request_amount, request_mode)
     if err == "has_active_request":
         return error(3001)
+    if err == "waiting_area_full":
+        return error(3005)
     return success(result)
 
 
@@ -38,11 +45,11 @@ def modify_amount():
     car_id = get_jwt_identity()
     if not _check_user(car_id):
         return error(2001)
-    data = request.get_json()
-    new_amount = data.get("amount", 0)
-    if new_amount <= 0:
+    data = request.get_json(silent=True) or {}
+    new_amount = parse_float(data.get("amount", 0))
+    if new_amount is None or new_amount <= 0:
         return error(1001)
-    _, err = RequestService.modify_amount(car_id, float(new_amount))
+    _, err = RequestService.modify_amount(car_id, new_amount)
     if err == "no_active_request":
         return error(3002)
     if err == "not_in_waiting_area":
@@ -54,7 +61,7 @@ def modify_amount():
 @jwt_required()
 def modify_mode():
     car_id = get_jwt_identity()
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     new_mode = data.get("mode", "").strip()
     if new_mode not in ("F", "T"):
         return error(1001)
@@ -92,15 +99,23 @@ def queue_status():
 @jwt_required()
 def start_charging():
     car_id = get_jwt_identity()
-    data = request.get_json()
-    pile_id = data.get("pile_id", 0)
-    result, err = ChargingService.start_charging(car_id, int(pile_id))
+    data = request.get_json(silent=True) or {}
+    pile_id = parse_int(data.get("pile_id", 0))
+    if pile_id is None:
+        return error(1001)
+    result, err = ChargingService.start_charging(car_id, pile_id)
     if err == "no_active_request":
         return error(3002)
     if err == "not_dispatched":
         return error(3003)
+    if err == "wrong_pile":
+        return error(3003, "车辆未分配到该充电桩")
     if err == "pile_not_found":
         return error(4001)
+    if err == "pile_unavailable":
+        return error(4002)
+    if err == "not_first_in_queue":
+        return error(3003, "尚未轮到该车辆充电")
     return success({"session_id": result.session_id})
 
 

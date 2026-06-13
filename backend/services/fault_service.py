@@ -11,8 +11,8 @@ from ..models.charging_detail import ChargingDetail
 from ..models.bill import Bill
 from ..services.dispatch_service import DispatchService
 from ..utils.pricing import calculate_charge_fee, calculate_service_fee
-from ..config import FAULT_DISPATCH_STRATEGY
-from datetime import datetime
+from ..utils.timezone import local_now, to_local_iso
+from .. import config
 
 
 class FaultService:
@@ -35,7 +35,7 @@ class FaultService:
 
         FaultRecordDAO.create(pile_id, handler)
 
-        strategy = FAULT_DISPATCH_STRATEGY
+        strategy = config.FAULT_DISPATCH_STRATEGY
         if strategy == "time_order":
             DispatchService.dispatch_by_time_order(pile_id)
         else:
@@ -68,8 +68,8 @@ class FaultService:
         records = FaultRecordDAO.find_all()
         return [{
             "fault_id": r.fault_id, "pile_id": r.pile_id,
-            "fault_time": r.fault_time.isoformat() if r.fault_time else None,
-            "recover_time": r.recover_time.isoformat() if r.recover_time else None,
+            "fault_time": to_local_iso(r.fault_time),
+            "recover_time": to_local_iso(r.recover_time),
             "status": r.status, "handler": r.handler,
         } for r in records]
 
@@ -104,11 +104,12 @@ def _interrupt_session(session):
     """故障中断正在充电的会话：停止计费、生成详单和账单、清除请求。"""
     pile = ChargingPileDAO.find_by_id(session.pile_id)
     pricing = PricingRuleDAO.get_by_mode(pile.mode)
-    now = datetime.utcnow()
+    now = local_now()
     req = ChargingRequestDAO.find_by_id(session.request_id)
 
     elapsed = (now - session.start_time).total_seconds() / 3600
     actual = round(min(elapsed * pile.power, req.request_amount if req else 0), 2)
+    charge_duration = actual / pile.power if pile.power else 0.0
 
     charge_fee = calculate_charge_fee(actual, pile.power, session.start_time, pricing)
     service_fee = calculate_service_fee(actual, pricing)
@@ -120,7 +121,7 @@ def _interrupt_session(session):
 
     detail = ChargingDetail(
         session_id=session.session_id, car_id=session.car_id, pile_id=pile.pile_id,
-        charge_amount=actual, charge_duration=round(elapsed, 2),
+        charge_amount=actual, charge_duration=round(charge_duration, 2),
         start_time=session.start_time, stop_time=now,
         charge_fee=charge_fee, service_fee=service_fee,
         total_fee=round(charge_fee + service_fee, 2),
@@ -134,11 +135,18 @@ def _interrupt_session(session):
     ))
 
     pile.total_charge_num += 1
-    pile.total_charge_time += elapsed
+    pile.total_charge_time += charge_duration
     pile.total_charge_capacity += actual
     ChargingPileDAO.update(pile)
 
-    # 清除正在充电的车，标记待重调度
+    # 正在充电的车辆只重调度剩余电量，避免故障后重复充完整请求量。
     if req:
-        req.status = "pending_reschedule"
+        remaining = round(max((req.request_amount or 0) - actual, 0), 2)
+        if remaining <= 0:
+            PileQueueDAO.remove_by_request_id(req.request_id)
+            req.request_amount = 0
+            req.status = "completed"
+        else:
+            req.request_amount = remaining
+            req.status = "pending_reschedule"
         ChargingRequestDAO.update(req)

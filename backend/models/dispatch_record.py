@@ -1,5 +1,5 @@
 from . import db
-from datetime import datetime
+from ..utils.timezone import local_now
 
 
 class DispatchRecord(db.Model):
@@ -9,4 +9,4 @@ class DispatchRecord(db.Model):
     from_location = db.Column(db.String(50))
     to_pile_id = db.Column(db.Integer, db.ForeignKey("charging_pile.pile_id"), nullable=False)
     dispatch_type = db.Column(db.String(30))
-    dispatch_time = db.Column(db.DateTime, default=datetime.utcnow)
+    dispatch_time = db.Column(db.DateTime, default=local_now)

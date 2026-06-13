@@ -138,6 +138,7 @@
       <div class="field" v-if="!adminIsLogin"><label>用户名</label><input v-model="authForm.user_name" placeholder="管理员名称" @keyup.enter="doRegisterAdmin()"></div>
       <div class="field"><label>密码</label><input v-model="authForm.password" type="password" placeholder="密码" @keyup.enter="adminIsLogin ? doLogin() : doRegisterAdmin()"></div>
       <div class="field" v-if="!adminIsLogin"><label>确认密码</label><input v-model="authForm.confirm_password" type="password" placeholder="再次输入密码" @keyup.enter="doRegisterAdmin()"></div>
+      <div class="field" v-if="!adminIsLogin"><label>注册码</label><input v-model="authForm.admin_code" type="password" placeholder="管理员注册码" @keyup.enter="doRegisterAdmin()"></div>
       <button v-if="adminIsLogin" class="btn btn-primary" style="width:100%;justify-content:center" @click="doLogin">登录</button>
       <button v-if="!adminIsLogin" class="btn btn-primary" style="width:100%;justify-content:center" @click="doRegisterAdmin">注册</button>
       <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-secondary)">
@@ -226,15 +227,15 @@
           </div>
           <div style="overflow-x:auto">
             <table class="tbl">
-              <thead><tr><th>桩号</th><th>类型</th><th>充电次数</th><th>充电时长(h)</th><th>充电量(度)</th><th>充电费</th><th>服务费</th><th>总费用</th></tr></thead>
+              <thead><tr><th>时间</th><th>桩号</th><th>类型</th><th>充电次数</th><th>充电时长(h)</th><th>充电量(度)</th><th>充电费</th><th>服务费</th><th>总费用</th></tr></thead>
               <tbody>
                 <tr v-for="r in reportData" :key="r.pile_id">
-                  <td><strong>#{{ r.pile_id }}</strong></td><td>{{ r.mode }}</td><td>{{ r.charge_count }}</td>
+                  <td>{{ reportTimeLabel }}</td><td><strong>#{{ r.pile_id }}</strong></td><td>{{ r.mode }}</td><td>{{ r.charge_count }}</td>
                   <td>{{ r.charge_time }}</td><td>{{ r.charge_amount }}</td>
                   <td>&yen;{{ r.charge_fee }}</td><td>&yen;{{ r.service_fee }}</td>
                   <td style="font-weight:700">&yen;{{ r.total_fee }}</td>
                 </tr>
-                <tr v-if="reportData.length===0"><td colspan="8" class="empty">选择日期查询报表</td></tr>
+                <tr v-if="reportData.length===0"><td colspan="9" class="empty">选择日期查询报表</td></tr>
               </tbody>
             </table>
           </div>
@@ -295,10 +296,10 @@
             <div v-if="faults.length===0" class="empty">暂无故障</div>
             <div v-for="f in faults" :key="f.fault_id" class="fault-item">
               <div>
-                <div>桩 #{{ f.pile_id }} · {{ f.fault_time?.replace('T',' ') }}</div>
+                <div>桩 #{{ f.pile_id }} · {{ formatTime(f.fault_time) }}</div>
                 <div :class="f.status==='active'?'fault-active':'fault-resolved'">
                   {{ f.status==='active' ? '进行中' : '已恢复' }}
-                  <span v-if="f.recover_time"> · 恢复于 {{ f.recover_time?.replace('T',' ') }}</span>
+                  <span v-if="f.recover_time"> · 恢复于 {{ formatTime(f.recover_time) }}</span>
                 </div>
               </div>
             </div>
@@ -312,37 +313,38 @@
     <div v-if="token" style="max-width:1280px;margin:0 auto;padding:0 24px 24px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
       <!-- System Config -->
       <div class="card">
-        <div class="card-title">系统参数 <span style="font-weight:400;font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0">（修改 backend/config.py 后重启生效）</span></div>
+        <div class="card-title">系统参数</div>
         <div class="pricing-grid">
-          <div class="field"><label>快充桩数</label><input type="number" v-model.number="sysConfig.fast_pile_num" disabled></div>
-          <div class="field"><label>慢充桩数</label><input type="number" v-model.number="sysConfig.slow_pile_num" disabled></div>
-          <div class="field"><label>等候区容量 N</label><input type="number" v-model.number="sysConfig.waiting_area_size" disabled></div>
-          <div class="field"><label>桩队列长度 M</label><input type="number" v-model.number="sysConfig.charging_queue_len" disabled></div>
+          <div class="field"><label>快充桩数</label><input type="number" min="1" v-model.number="sysConfig.fast_pile_num"></div>
+          <div class="field"><label>慢充桩数</label><input type="number" min="1" v-model.number="sysConfig.slow_pile_num"></div>
+          <div class="field"><label>等候区容量 N</label><input type="number" min="1" v-model.number="sysConfig.waiting_area_size"></div>
+          <div class="field"><label>桩队列长度 M</label><input type="number" min="1" v-model.number="sysConfig.charging_queue_len"></div>
+          <div class="field"><label>故障调度策略</label><select v-model="sysConfig.fault_strategy" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:var(--font)"><option value="priority">优先级调度</option><option value="time_order">时间顺序调度</option></select></div>
+          <div class="field"><label>扩展调度模式</label><select v-model="sysConfig.dispatch_mode" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:var(--font)"><option value="normal">普通调度</option><option value="single_min_total">单次总时长最短</option><option value="batch_min_total">批量总时长最短</option></select></div>
         </div>
+        <button class="btn btn-primary btn-sm mt-12" @click="saveSysConfig">保存系统参数</button>
       </div>
 
       <!-- Fast Pricing -->
       <div class="card">
         <div class="card-title">快充计费 (F)</div>
         <div class="pricing-grid">
-          <div class="field"><label>峰时电价</label><input v-model="pricingForm.fast.peak" type="number" step="0.01"></div>
-          <div class="field"><label>平时电价</label><input v-model="pricingForm.fast.mid" type="number" step="0.01"></div>
-          <div class="field"><label>谷时电价</label><input v-model="pricingForm.fast.off_peak" type="number" step="0.01"></div>
-          <div class="field"><label>服务费</label><input v-model="pricingForm.fast.service" type="number" step="0.01"></div>
+          <div class="field"><label>峰时电价</label><input v-model="pricingForm.fast.peak" type="number" step="0.01" disabled></div>
+          <div class="field"><label>平时电价</label><input v-model="pricingForm.fast.mid" type="number" step="0.01" disabled></div>
+          <div class="field"><label>谷时电价</label><input v-model="pricingForm.fast.off_peak" type="number" step="0.01" disabled></div>
+          <div class="field"><label>服务费</label><input v-model="pricingForm.fast.service" type="number" step="0.01" disabled></div>
         </div>
-        <button class="btn btn-primary btn-sm mt-12" @click="savePricing('F')">保存快充</button>
       </div>
 
       <!-- Slow Pricing -->
       <div class="card">
         <div class="card-title">慢充计费 (T)</div>
         <div class="pricing-grid">
-          <div class="field"><label>峰时电价</label><input v-model="pricingForm.slow.peak" type="number" step="0.01"></div>
-          <div class="field"><label>平时电价</label><input v-model="pricingForm.slow.mid" type="number" step="0.01"></div>
-          <div class="field"><label>谷时电价</label><input v-model="pricingForm.slow.off_peak" type="number" step="0.01"></div>
-          <div class="field"><label>服务费</label><input v-model="pricingForm.slow.service" type="number" step="0.01"></div>
+          <div class="field"><label>峰时电价</label><input v-model="pricingForm.slow.peak" type="number" step="0.01" disabled></div>
+          <div class="field"><label>平时电价</label><input v-model="pricingForm.slow.mid" type="number" step="0.01" disabled></div>
+          <div class="field"><label>谷时电价</label><input v-model="pricingForm.slow.off_peak" type="number" step="0.01" disabled></div>
+          <div class="field"><label>服务费</label><input v-model="pricingForm.slow.service" type="number" step="0.01" disabled></div>
         </div>
-        <button class="btn btn-primary btn-sm mt-12" @click="savePricing('T')">保存慢充</button>
       </div>
     </div>
   </div>
@@ -369,11 +371,11 @@ createApp({
       token: localStorage.getItem('admin_token') || '',
       carId: localStorage.getItem('admin_car_id') || '',
       adminIsLogin: true,
-      authForm: { car_id:'', user_name:'', password:'', confirm_password:'' },
+      authForm: { car_id:'', user_name:'', password:'', confirm_password:'', admin_code:'' },
       piles: [], selectedPile: null, pileVehicles: [],
       pollTimer: null, faults: [], waitingArea: { capacity: 0, fast_waiting: 0, slow_waiting: 0 },
-      sysConfig: { fast_pile_num:2, slow_pile_num:3, waiting_area_size:10, charging_queue_len:5, fault_strategy:'priority' },
-      pricingForm: { fast:{peak:1.0,mid:0.7,off_peak:0.4,service:0.8}, slow:{peak:0.8,mid:0.5,off_peak:0.3,service:0.6} },
+      sysConfig: { fast_pile_num:2, slow_pile_num:3, waiting_area_size:10, charging_queue_len:5, fault_strategy:'priority', dispatch_mode:'normal' },
+      pricingForm: { fast:{peak:1.0,mid:0.7,off_peak:0.4,service:0.8}, slow:{peak:1.0,mid:0.7,off_peak:0.4,service:0.8} },
       reportPeriod: 'day', reportDate: '', reportData: [],
       statusMap: { off:'关闭', standby:'待机', available:'可用', charging:'充电中', fault:'故障' },
     }
@@ -388,6 +390,11 @@ createApp({
     },
     waitingVehicles() {
       return this.pileVehicles.filter(v => v.status !== 'charging')
+    },
+    reportTimeLabel() {
+      const periodMap = { day: '日', week: '周', month: '月' }
+      const d = this.reportDate || new Date().toISOString().slice(0, 10)
+      return `${periodMap[this.reportPeriod] || '日'} ${this.reportPeriod === 'month' ? d.slice(0, 7) : d}`
     },
   },
   mounted() { if(this.token) { axios.defaults.headers.common['Authorization']='Bearer '+this.token; this.startAll() } },
@@ -407,7 +414,7 @@ createApp({
         this.toast('两次密码不一致', 'error'); return
       }
       try {
-        const r = await axios.post(API+'/auth/register', { car_id:this.authForm.car_id, user_name:this.authForm.user_name, car_capacity:1, password:this.authForm.password, role:'admin' })
+        const r = await axios.post(API+'/auth/register', { car_id:this.authForm.car_id, user_name:this.authForm.user_name, car_capacity:1, password:this.authForm.password, role:'admin', admin_code:this.authForm.admin_code })
         if(r.data.code===0) { this.toast('注册成功，请登录'); this.adminIsLogin = true }
         else this.toast(r.data.message, 'error')
       } catch(e) { this.toast('网络错误', 'error') }
@@ -427,6 +434,16 @@ createApp({
     },
     async loadSysConfig() {
       try { const r = await axios.get(API+'/admin/system-config'); if(r.data.code===0) this.sysConfig = r.data.data } catch(e) {}
+    },
+    async saveSysConfig() {
+      try {
+        const r = await axios.put(API+'/admin/system-config', this.sysConfig)
+        if(r.data.code===0) {
+          this.sysConfig = r.data.data
+          this.loadPiles(); this.loadWaitingArea()
+          this.toast('系统参数已保存')
+        } else this.toast(r.data.message, 'error')
+      } catch(e) { this.toast('保存失败', 'error') }
     },
     async loadPiles() {
       try { const r = await axios.get(API+'/pile/status'); if(r.data.code===0) this.piles = r.data.data } catch(e) {}
@@ -459,15 +476,9 @@ createApp({
         }
       } catch(e) {}
     },
-    async savePricing(mode) {
-      const f = mode==='F' ? this.pricingForm.fast : this.pricingForm.slow
-      try {
-        await axios.put(API+'/pile/parameters', { mode, peak_price:Number(f.peak), mid_price:Number(f.mid), off_peak_price:Number(f.off_peak), service_fee_rate:Number(f.service) })
-        this.toast((mode==='F'?'快充':'慢充')+'参数已保存')
-      } catch(e) {}
-    },
     async loadReport() {
-      const d = this.reportDate || new Date().toISOString().slice(0,10)
+      let d = this.reportDate || new Date().toISOString().slice(0,10)
+      if (this.reportPeriod === 'month') d = d.slice(0, 7)
       try { const r = await axios.get(API+'/admin/report/stats',{params:{period:this.reportPeriod, date:d}}); if(r.data.code===0) this.reportData = r.data.data?.piles||[] } catch(e) {}
     },
     async loadFaults() {
@@ -486,6 +497,10 @@ createApp({
       Object.assign(el.style, { position:'fixed',top:'20px',left:'50%',transform:'translateX(-50%)',padding:'10px 24px',borderRadius:'8px',background:'var(--surface)',color:c,fontWeight:'600',fontSize:'14px',boxShadow:'0 8px 32px rgba(0,0,0,0.12)',zIndex:'999',border:'1px solid var(--border)' })
       document.body.appendChild(el)
       setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300) }, 2000)
+    },
+    formatTime(value) {
+      if (!value) return ''
+      return value.replace('T', ' ').slice(0, 19)
     }
   }
 }).mount('#app')

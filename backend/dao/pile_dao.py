@@ -1,7 +1,5 @@
 from ..models import db
 from ..models.charging_pile import ChargingPile
-from sqlalchemy import func
-
 
 class ChargingPileDAO:
     @staticmethod
@@ -51,14 +49,10 @@ class ChargingPileDAO:
         if end:
             q = q.filter(ChargingSession.end_time <= end)
 
-        count = q.count()
-        total_charge_time = db.session.query(func.coalesce(func.sum(ChargingSession.charge_amount), 0)).filter(
-            ChargingSession.pile_id == pile_id,
-            ChargingSession.status == "completed",
+        sessions = q.all()
+        total_time = sum(
+            (s.end_time - s.start_time).total_seconds() / 3600
+            for s in sessions
+            if s.start_time and s.end_time
         )
-        if start:
-            total_charge_time = total_charge_time.filter(ChargingSession.end_time >= start)
-        if end:
-            total_charge_time = total_charge_time.filter(ChargingSession.end_time <= end)
-        total_time = total_charge_time.scalar()
-        return count, total_time or 0.0
+        return len(sessions), total_time

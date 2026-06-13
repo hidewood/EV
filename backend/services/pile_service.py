@@ -4,6 +4,7 @@ from ..dao.user_dao import ChargingRequestDAO, UserDAO
 from ..dao.misc_dao import PricingRuleDAO, FaultRecordDAO, DispatchRecordDAO
 from ..services.dispatch_service import DispatchService
 from ..models.dispatch_record import DispatchRecord
+from ..utils.timezone import local_now
 
 
 class PileService:
@@ -42,6 +43,8 @@ class PileService:
         active = ChargingSessionDAO.find_active_by_pile_id(pile_id)
         if active:
             return None, "has_active_session"
+        if PileQueueDAO.get_count_by_pile(pile_id) > 0:
+            return None, "has_queued_vehicle"
 
         pile.status = "off"
         ChargingPileDAO.update(pile)
@@ -96,6 +99,7 @@ class PileService:
                 "position": e.position,
                 "status": req.status,
                 "queue_num": req.queue_num,
+                "wait_minutes": round((local_now() - e.enter_time).total_seconds() / 60, 1),
             })
 
         return {
@@ -112,13 +116,4 @@ class PileService:
 
     @staticmethod
     def set_parameters(mode, peak, mid, off_peak, service_rate):
-        if any(v <= 0 for v in [peak, mid, off_peak, service_rate]):
-            return None, "invalid_params"
-        rule = PricingRuleDAO.update_pricing(mode, peak, mid, off_peak, service_rate)
-        return {
-            "mode": rule.mode,
-            "peak_price": rule.peak_price,
-            "mid_price": rule.mid_price,
-            "off_peak_price": rule.off_peak_price,
-            "service_fee_rate": rule.service_fee_rate,
-        }, None
+        return None, "fixed_pricing"

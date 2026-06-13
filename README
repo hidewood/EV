@@ -1,0 +1,3 @@
+cd E:\BUPTStudy\课程\软件工程\软工\软工
+.\venv\Scripts\Activate.ps1
+python -B run.py

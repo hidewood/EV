@@ -56,6 +56,25 @@ class ChargingRequestDAO:
     def find_by_status(status_list):
         return ChargingRequest.query.filter(ChargingRequest.status.in_(status_list)).all()
 
+    @staticmethod
+    def get_max_queue_num_by_mode(mode):
+        requests = (
+            ChargingRequest.query
+            .filter_by(request_mode=mode)
+            .filter(ChargingRequest.queue_num.isnot(None))
+            .all()
+        )
+        max_num = 0
+        for req in requests:
+            queue_num = req.queue_num or ""
+            if not queue_num.startswith(mode):
+                continue
+            try:
+                max_num = max(max_num, int(queue_num[1:]))
+            except ValueError:
+                continue
+        return max_num
+
 
 class ChargingSessionDAO:
     @staticmethod

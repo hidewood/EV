@@ -5,9 +5,11 @@
 from ..dao.pile_dao import ChargingPileDAO
 from ..dao.pile_queue_dao import PileQueueDAO
 from ..dao.queue_dao import WaitingQueueDAO
-from ..dao.user_dao import ChargingRequestDAO
+from ..dao.user_dao import ChargingRequestDAO, ChargingSessionDAO
 from ..dao.misc_dao import DispatchRecordDAO
 from ..models.dispatch_record import DispatchRecord
+from .. import config
+from ..utils.timezone import local_now
 
 _calling_paused = False
 
@@ -31,16 +33,81 @@ class DispatchService:
         """扫描所有充电桩，有空位就从共享等候区拉匹配的车入队。"""
         if _calling_paused:
             return False
+        pending_dispatched = DispatchService.dispatch_pending_reschedules()
+        if DispatchService.has_pending_reschedules():
+            return pending_dispatched
+        if config.EXTENDED_DISPATCH_MODE == "single_min_total":
+            return DispatchService.dispatch_single_min_total()
+        if config.EXTENDED_DISPATCH_MODE == "batch_min_total":
+            return DispatchService.dispatch_batch_min_total_if_ready()
+        return DispatchService.dispatch_normal()
+
+    @staticmethod
+    def dispatch_normal():
+        """普通叫号：每次从同模式等候区队首调度到完成时间最短的桩。"""
+        dispatched = False
+        changed = True
+        while changed:
+            changed = False
+            for mode in ("F", "T"):
+                for pile in ChargingPileDAO.find_by_mode_and_status(mode, ["available", "charging"]):
+                    if PileQueueDAO.get_count_by_pile(pile.pile_id) < pile.queue_len:
+                        entry = WaitingQueueDAO.get_first_by_mode(mode)
+                        if entry:
+                            req = ChargingRequestDAO.find_by_id(entry.request_id)
+                            if req and req.status == "queuing":
+                                DispatchService._dispatch_to_best_pile(req, "waiting")
+                                dispatched = True
+                                changed = True
+                                break
+                if changed:
+                    break
+        return dispatched
+
+    @staticmethod
+    def dispatch_single_min_total():
+        """扩展 8a：同模式多空位同时叫号，最小化本次进入充电区车辆的总完成时长。"""
+        dispatched = False
         for mode in ("F", "T"):
-            for pile in ChargingPileDAO.find_by_mode_and_status(mode, ["available", "charging"]):
-                if PileQueueDAO.get_count_by_pile(pile.pile_id) < pile.queue_len:
-                    entry = WaitingQueueDAO.get_first_by_mode(mode)
-                    if entry:
-                        req = ChargingRequestDAO.find_by_id(entry.request_id)
-                        if req and req.status == "queuing":
-                            DispatchService._dispatch_to_best_pile(req, "waiting")
-                            return True
-        return False
+            piles = DispatchService._online_piles(mode=mode)
+            slot_count = DispatchService._free_slot_count(piles)
+            if slot_count <= 0:
+                continue
+            entries = WaitingQueueDAO.get_all_by_mode(mode)[:slot_count]
+            requests = [
+                ChargingRequestDAO.find_by_id(e.request_id)
+                for e in entries
+            ]
+            requests = [r for r in requests if r and r.status == "queuing"]
+            if not requests:
+                continue
+            assignments = DispatchService._min_total_assignments(requests, piles)
+            DispatchService._apply_assignments(assignments, "single_min_total")
+            dispatched = dispatched or bool(assignments)
+        return dispatched
+
+    @staticmethod
+    def dispatch_batch_min_total_if_ready():
+        """扩展 8b：全站车位满后，忽略快/慢充偏好，做批量最短总完成时长调度。"""
+        if DispatchService._occupied_pile_slots() > 0:
+            return False
+
+        capacity = DispatchService.station_capacity()
+        if WaitingQueueDAO.get_total_count() < capacity:
+            return False
+
+        requests = []
+        for mode in ("F", "T"):
+            for entry in WaitingQueueDAO.get_all_by_mode(mode):
+                req = ChargingRequestDAO.find_by_id(entry.request_id)
+                if req and req.status == "queuing":
+                    requests.append(req)
+        requests.sort(key=lambda r: DispatchService._queue_num_key(r.queue_num))
+        requests = requests[:capacity]
+        piles = DispatchService._online_piles()
+        assignments = DispatchService._min_total_assignments(requests, piles, respect_queue_len=False)
+        DispatchService._apply_assignments(assignments, "batch_min_total")
+        return bool(assignments)
 
     # ── 核心调度算法 ──────────────────────────────────
 
@@ -54,7 +121,13 @@ class DispatchService:
         for e in PileQueueDAO.get_by_pile_ordered(pile_id):
             r = ChargingRequestDAO.find_by_id(e.request_id)
             if r:
-                acc += r.request_amount / pile.power
+                amount = r.request_amount
+                if r.status == "charging":
+                    session = ChargingSessionDAO.find_active_by_car_id(r.car_id)
+                    if session:
+                        elapsed_hours = max((local_now() - session.start_time).total_seconds() / 3600, 0)
+                        amount = max(r.request_amount - elapsed_hours * pile.power, 0)
+                acc += amount / pile.power
         return acc + request_amount / pile.power
 
     @staticmethod
@@ -88,6 +161,142 @@ class DispatchService:
         ))
         return best.pile_id
 
+    @staticmethod
+    def station_capacity():
+        return config.SYSTEM_CONFIG["WaitingAreaSize"] + sum(
+            p.queue_len for p in DispatchService._online_piles()
+        )
+
+    @staticmethod
+    def _online_piles(mode=None):
+        piles = [
+            p for p in ChargingPileDAO.find_all()
+            if p.status in ("available", "charging")
+        ]
+        if mode:
+            piles = [p for p in piles if p.mode == mode]
+        return piles
+
+    @staticmethod
+    def _free_slot_count(piles):
+        return sum(max(p.queue_len - PileQueueDAO.get_count_by_pile(p.pile_id), 0) for p in piles)
+
+    @staticmethod
+    def _occupied_pile_slots():
+        return sum(PileQueueDAO.get_count_by_pile(p.pile_id) for p in ChargingPileDAO.find_all())
+
+    @staticmethod
+    def _current_load_hours(pile):
+        return DispatchService._completion_time(pile.pile_id, 0)
+
+    @staticmethod
+    def _min_total_assignments(requests, piles, respect_queue_len=True):
+        """返回 [(request, pile), ...]，目标是本批车辆完成时间之和最小。"""
+        if respect_queue_len:
+            piles = [
+                p for p in piles
+                if p.status in ("available", "charging") and PileQueueDAO.get_count_by_pile(p.pile_id) < p.queue_len
+            ]
+        else:
+            piles = [p for p in piles if p.status in ("available", "charging")]
+        if not requests or not piles:
+            return []
+
+        loads = {p.pile_id: DispatchService._current_load_hours(p) for p in piles}
+        slots = {
+            p.pile_id: (
+                p.queue_len - PileQueueDAO.get_count_by_pile(p.pile_id)
+                if respect_queue_len else len(requests)
+            )
+            for p in piles
+        }
+        pile_by_id = {p.pile_id: p for p in piles}
+        requests = sorted(requests, key=lambda r: (r.request_amount, DispatchService._queue_num_key(r.queue_num)))
+
+        if len(requests) <= 10:
+            best = {"cost": float("inf"), "pairs": []}
+
+            def search(idx, cur_loads, cur_slots, pairs, cost):
+                if cost >= best["cost"]:
+                    return
+                if idx >= len(requests):
+                    best["cost"] = cost
+                    best["pairs"] = pairs[:]
+                    return
+
+                req = requests[idx]
+                for pile in piles:
+                    if cur_slots[pile.pile_id] <= 0:
+                        continue
+                    duration = req.request_amount / pile.power
+                    completion = cur_loads[pile.pile_id] + duration
+                    next_loads = dict(cur_loads)
+                    next_slots = dict(cur_slots)
+                    next_loads[pile.pile_id] = completion
+                    next_slots[pile.pile_id] -= 1
+                    search(idx + 1, next_loads, next_slots, pairs + [(req, pile)], cost + completion)
+
+            search(0, loads, slots, [], 0.0)
+            return best["pairs"]
+
+        pairs = []
+        for req in requests:
+            candidates = [p for p in piles if slots[p.pile_id] > 0]
+            if not candidates:
+                break
+            best_pile = min(candidates, key=lambda p: loads[p.pile_id] + req.request_amount / p.power)
+            loads[best_pile.pile_id] += req.request_amount / best_pile.power
+            slots[best_pile.pile_id] -= 1
+            pairs.append((req, pile_by_id[best_pile.pile_id]))
+        return pairs
+
+    @staticmethod
+    def _apply_assignments(assignments, dispatch_type):
+        for req, pile in assignments:
+            if not req or not pile:
+                continue
+            pos = PileQueueDAO.get_count_by_pile(pile.pile_id) + 1
+            PileQueueDAO.add(pile.pile_id, req.request_id, pos)
+            req.pile_id = pile.pile_id
+            req.status = "dispatched"
+            ChargingRequestDAO.update(req)
+            WaitingQueueDAO.remove_by_request_id(req.request_id)
+            DispatchRecordDAO.insert(DispatchRecord(
+                request_id=req.request_id,
+                from_location="waiting",
+                to_pile_id=pile.pile_id,
+                dispatch_type=dispatch_type,
+            ))
+
+    @staticmethod
+    def has_pending_reschedules():
+        return bool(ChargingRequestDAO.find_by_status(["pending_reschedule"]))
+
+    @staticmethod
+    def dispatch_pending_reschedules():
+        """故障/恢复重调度残留车辆优先于等候区叫号。"""
+        dispatched = False
+        changed = True
+        while changed:
+            changed = False
+            pending = sorted(
+                ChargingRequestDAO.find_by_status(["pending_reschedule"]),
+                key=lambda r: DispatchService._queue_num_key(r.queue_num),
+            )
+            for req in pending:
+                pile_id = DispatchService._dispatch_to_best_pile(req, "pending_reschedule_fault")
+                if pile_id:
+                    dispatched = True
+                    changed = True
+                    break
+        return dispatched
+
+    @staticmethod
+    def _mark_pending_reschedule(req):
+        req.status = "pending_reschedule"
+        req.pile_id = None
+        ChargingRequestDAO.update(req)
+
     # ── 优先级调度（故障） ────────────────────────────
 
     @staticmethod
@@ -105,9 +314,8 @@ class DispatchService:
                 req = ChargingRequestDAO.find_by_id(e.request_id)
                 if not req or req.status == "cancelled":
                     continue
-                req.status = "pending_reschedule"
-                ChargingRequestDAO.update(req)
-                DispatchService._dispatch_to_best_pile(req, f"priority_fault_{fault_pile_id}")
+                DispatchService._mark_pending_reschedule(req)
+            DispatchService.dispatch_pending_reschedules()
             return True
         finally:
             resume_calling()
@@ -144,13 +352,11 @@ class DispatchService:
                     for req in all_uncharged:
                         PileQueueDAO.remove_by_request_id(req.request_id)
 
-            all_uncharged.sort(key=lambda r: r.queue_num or "")
+            all_uncharged.sort(key=lambda r: DispatchService._queue_num_key(r.queue_num))
 
-            healthy = [p for p in same_type if p.pile_id != fault_pile_id and p.status in ("available", "charging")]
             for req in all_uncharged:
-                req.status = "pending_reschedule"
-                ChargingRequestDAO.update(req)
-                DispatchService._dispatch_to_best_pile(req, f"timeorder_fault_{fault_pile_id}")
+                DispatchService._mark_pending_reschedule(req)
+            DispatchService.dispatch_pending_reschedules()
 
             return True
         finally:
@@ -183,14 +389,21 @@ class DispatchService:
             if not all_uncharged:
                 return True
 
-            all_uncharged.sort(key=lambda r: r.queue_num or "")
+            all_uncharged.sort(key=lambda r: DispatchService._queue_num_key(r.queue_num))
 
-            available = [p for p in same_type if p.status in ("available", "charging")]
             for req in all_uncharged:
-                req.status = "pending_reschedule"
-                ChargingRequestDAO.update(req)
-                DispatchService._dispatch_to_best_pile(req, f"recovery_{recovered_pile_id}")
+                DispatchService._mark_pending_reschedule(req)
+            DispatchService.dispatch_pending_reschedules()
 
             return True
         finally:
             resume_calling()
+
+    @staticmethod
+    def _queue_num_key(queue_num):
+        if not queue_num:
+            return ("", 0)
+        try:
+            return (queue_num[0], int(queue_num[1:]))
+        except ValueError:
+            return (queue_num[0], 0)

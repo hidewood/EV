@@ -1,5 +1,5 @@
 from . import db
-from datetime import datetime
+from ..utils.timezone import local_now
 
 
 class WaitingQueue(db.Model):
@@ -8,4 +8,4 @@ class WaitingQueue(db.Model):
     request_id = db.Column(db.Integer, db.ForeignKey("charging_request.request_id"), nullable=False)
     mode = db.Column(db.Enum("F", "T"), nullable=False)
     queue_num = db.Column(db.String(10), nullable=False)
-    join_time = db.Column(db.DateTime, default=datetime.utcnow)
+    join_time = db.Column(db.DateTime, default=local_now)

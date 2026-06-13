@@ -1,4 +1,6 @@
 from ..dao.user_dao import ChargingRequestDAO, UserDAO
+from ..dao.pile_dao import ChargingPileDAO
+from ..dao.pile_queue_dao import PileQueueDAO
 from ..models.charging_request import ChargingRequest
 from ..services.queue_service import QueueService
 from ..services.dispatch_service import DispatchService
@@ -7,9 +9,22 @@ from ..services.dispatch_service import DispatchService
 class RequestService:
     @staticmethod
     def submit_request(car_id, request_amount, request_mode):
+        from .. import config
+
         active = ChargingRequestDAO.find_active_by_car_id(car_id)
         if active:
             return None, "has_active_request"
+        if config.EXTENDED_DISPATCH_MODE == "batch_min_total":
+            if QueueService.waiting_area_count() >= DispatchService.station_capacity():
+                return None, "waiting_area_full"
+        else:
+            matching_piles = ChargingPileDAO.find_by_mode_and_status(request_mode, ["available", "charging"])
+            has_immediate_slot = any(
+                PileQueueDAO.get_count_by_pile(p.pile_id) < p.queue_len
+                for p in matching_piles
+            )
+            if not QueueService.waiting_area_has_slot() and not has_immediate_slot:
+                return None, "waiting_area_full"
 
         request_obj = ChargingRequest(
             car_id=car_id,
@@ -28,6 +43,7 @@ class RequestService:
             "request_id": request_obj.request_id,
             "queue_num": queue_num,
             "status": request_obj.status,
+            "pile_id": request_obj.pile_id,
             "position": position,
         }, None
 

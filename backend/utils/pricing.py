@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 PEAK_HOURS = [(10, 15), (18, 21)]
 MID_HOURS = [(7, 10), (15, 18), (21, 23)]
@@ -14,28 +14,34 @@ def get_price_by_time(dt, pricing_rule):
 
 
 def calculate_charge_fee(charge_amount, charge_power, start_time, pricing_rule):
-    """按分钟精度分时段计算充电费。"""
+    """按价格边界精确拆分计算充电费。"""
     if charge_amount <= 0:
         return 0.0
     total_hours = charge_amount / charge_power
-    total_minutes = int(total_hours * 60)
-    if total_minutes <= 0:
-        total_minutes = 1
-
-    start_dt = start_time
+    end_dt = start_time + timedelta(hours=total_hours)
+    current = start_time
     total_fee = 0.0
-    remaining_minutes = total_minutes
 
-    while remaining_minutes > 0:
-        chunk = min(remaining_minutes, 60)
-        mid_dt = start_dt + timedelta(minutes=chunk / 2)
-        price = get_price_by_time(mid_dt, pricing_rule)
-        total_fee += price * charge_power * (chunk / 60)
-        start_dt = start_dt + timedelta(minutes=chunk)
-        remaining_minutes -= chunk
+    while current < end_dt:
+        next_dt = min(_next_price_boundary(current), end_dt)
+        hours = (next_dt - current).total_seconds() / 3600
+        total_fee += get_price_by_time(current, pricing_rule) * charge_power * hours
+        current = next_dt
 
     return round(total_fee, 2)
 
 
 def calculate_service_fee(charge_amount, pricing_rule):
     return round(charge_amount * pricing_rule.service_fee_rate, 2)
+
+
+def _next_price_boundary(dt):
+    boundary_hours = [7, 10, 15, 18, 21, 23]
+    candidates = [
+        datetime.combine(dt.date(), time(hour=h))
+        for h in boundary_hours
+        if datetime.combine(dt.date(), time(hour=h)) > dt
+    ]
+    if candidates:
+        return min(candidates)
+    return datetime.combine(dt.date() + timedelta(days=1), time(hour=7))

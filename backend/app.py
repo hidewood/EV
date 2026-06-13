@@ -156,31 +156,37 @@ def create_app():
 
 def init_db():
     """初始化数据库：建表（如不存在）+ 写入默认配置（如不存在）。保留已有用户数据。"""
-    with app.app_context():
-        db.create_all()
+    db.create_all()
 
-        from .models.pricing_rule import PricingRule
-        from .models.charging_pile import ChargingPile
+    from .models.pricing_rule import PricingRule
+    from .models.charging_pile import ChargingPile
 
-        for pr_cfg in DEFAULT_PRICING:
-            if not PricingRule.query.filter_by(mode=pr_cfg["mode"]).first():
-                db.session.add(PricingRule(**pr_cfg))
+    for pr_cfg in DEFAULT_PRICING:
+        rule = PricingRule.query.filter_by(mode=pr_cfg["mode"]).first()
+        if not rule:
+            db.session.add(PricingRule(**pr_cfg))
+        else:
+            rule.peak_price = pr_cfg["peak_price"]
+            rule.mid_price = pr_cfg["mid_price"]
+            rule.off_peak_price = pr_cfg["off_peak_price"]
+            rule.service_fee_rate = pr_cfg["service_fee_rate"]
 
-        for p_cfg in DEFAULT_PILES:
-            if not db.session.get(ChargingPile, p_cfg["pile_id"]):
-                db.session.add(ChargingPile(
-                    pile_id=p_cfg["pile_id"],
-                    mode=p_cfg["mode"],
-                    power=p_cfg["power"],
-                    status="available",
-                    queue_len=SYSTEM_CONFIG["ChargingQueueLen"],
-                ))
+    for p_cfg in DEFAULT_PILES:
+        if not db.session.get(ChargingPile, p_cfg["pile_id"]):
+            db.session.add(ChargingPile(
+                pile_id=p_cfg["pile_id"],
+                mode=p_cfg["mode"],
+                power=p_cfg["power"],
+                status="available",
+                queue_len=SYSTEM_CONFIG["ChargingQueueLen"],
+            ))
 
-        db.session.commit()
+    db.session.commit()
 
 
 app = create_app()
 
 if __name__ == "__main__":
-    init_db()
+    with app.app_context():
+        init_db()
     app.run(debug=True, host="0.0.0.0", port=5000)
