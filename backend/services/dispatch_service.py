@@ -105,7 +105,7 @@ class DispatchService:
         requests.sort(key=lambda r: DispatchService._queue_num_key(r.queue_num))
         requests = requests[:capacity]
         piles = DispatchService._online_piles()
-        assignments = DispatchService._min_total_assignments(requests, piles, respect_queue_len=False)
+        assignments = DispatchService._min_total_assignments(requests, piles, respect_queue_len=True)
         DispatchService._apply_assignments(assignments, "batch_min_total")
         return bool(assignments)
 
@@ -210,6 +210,12 @@ class DispatchService:
             )
             for p in piles
         }
+        total_slots = sum(slots.values())
+        if total_slots <= 0:
+            return []
+        if respect_queue_len and len(requests) > total_slots:
+            requests = requests[:total_slots]
+
         pile_by_id = {p.pile_id: p for p in piles}
         requests = sorted(requests, key=lambda r: (r.request_amount, DispatchService._queue_num_key(r.queue_num)))
 

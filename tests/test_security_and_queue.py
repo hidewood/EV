@@ -404,6 +404,66 @@ class SecurityAndQueueTest(unittest.TestCase):
         }, headers={"Authorization": f"Bearer {admin_token}"}).get_json()
         self.assertEqual(update["code"], 4002)
 
+    def test_admin_reset_runtime_clears_active_queues_but_keeps_users(self):
+        admin_token = self.register_admin_and_login()
+        self.assertEqual(self.register_user("U1")["code"], 0)
+        token = self.login("U1")
+        req = self.post("/api/charging/request", {
+            "request_mode": "F",
+            "request_amount": 10,
+        }, token)
+        self.assertEqual(req["code"], 0)
+
+        reset = self.post("/api/admin/reset/runtime", {}, admin_token)
+        self.assertEqual(reset["code"], 0)
+
+        with self.app.app_context():
+            from backend.dao.queue_dao import WaitingQueueDAO
+            from backend.dao.pile_queue_dao import PileQueueDAO
+            from backend.dao.user_dao import UserDAO, ChargingRequestDAO
+
+            self.assertEqual(WaitingQueueDAO.get_total_count(), 0)
+            self.assertEqual(PileQueueDAO.get_count_by_pile(1), 0)
+            self.assertIsNotNone(UserDAO.find_by_car_id("U1"))
+            self.assertEqual(ChargingRequestDAO.find_by_id(req["data"]["request_id"]).status, "cancelled")
+
+    def test_admin_reset_default_restores_demo_configuration(self):
+        admin_token = self.register_admin_and_login()
+
+        update = self.client.put("/api/admin/system-config", json={
+            "fast_pile_num": 1,
+            "slow_pile_num": 1,
+            "waiting_area_size": 1,
+            "charging_queue_len": 1,
+            "fault_strategy": "time_order",
+            "dispatch_mode": "batch_min_total",
+        }, headers={"Authorization": f"Bearer {admin_token}"}).get_json()
+        self.assertEqual(update["code"], 0)
+
+        reset = self.post("/api/admin/reset/default", {}, admin_token)
+        self.assertEqual(reset["code"], 0)
+        self.assertEqual(reset["data"]["fast_pile_num"], 2)
+        self.assertEqual(reset["data"]["slow_pile_num"], 3)
+        self.assertEqual(reset["data"]["waiting_area_size"], 10)
+        self.assertEqual(reset["data"]["charging_queue_len"], 5)
+        self.assertEqual(reset["data"]["fault_strategy"], "priority")
+        self.assertEqual(reset["data"]["dispatch_mode"], "normal")
+
+        with self.app.app_context():
+            from backend.dao.queue_dao import WaitingQueueDAO
+            from backend.dao.pile_queue_dao import PileQueueDAO
+            from backend.dao.user_dao import UserDAO
+            from backend.dao.pile_dao import ChargingPileDAO
+
+            self.assertEqual(WaitingQueueDAO.get_total_count(), 0)
+            self.assertEqual(PileQueueDAO.get_count_by_pile(1), 0)
+            self.assertIsNotNone(UserDAO.find_by_car_id("ADM1"))
+            piles = ChargingPileDAO.find_all()
+            enabled = [p for p in piles if p.status != "off"]
+            self.assertEqual(len([p for p in enabled if p.mode == "F"]), 2)
+            self.assertEqual(len([p for p in enabled if p.mode == "T"]), 3)
+            self.assertTrue(all(p.queue_len == 5 for p in enabled))
+
     def test_fault_pending_reschedule_has_priority_when_slot_frees(self):
         with self.app.app_context():
             from backend.models import db
@@ -621,6 +681,7 @@ class SecurityAndQueueTest(unittest.TestCase):
             from backend.models import db
             from backend.models.charging_pile import ChargingPile
             from backend.dao.user_dao import ChargingRequestDAO
+            from backend.dao.pile_queue_dao import PileQueueDAO
             import backend.config as config
 
             config.EXTENDED_DISPATCH_MODE = "batch_min_total"
@@ -644,8 +705,11 @@ class SecurityAndQueueTest(unittest.TestCase):
                 self.assertEqual(resp["code"], 0)
 
             reqs = [ChargingRequestDAO.find_active_by_car_id(f"B{i}") for i in range(1, 4)]
-            self.assertTrue(all(r.status == "dispatched" for r in reqs))
+            self.assertEqual(sum(r.status == "dispatched" for r in reqs), 2)
+            self.assertEqual(sum(r.status == "queuing" for r in reqs), 1)
             self.assertTrue(any(r.pile_id == 1 for r in reqs))
+            self.assertLessEqual(PileQueueDAO.get_count_by_pile(1), 1)
+            self.assertLessEqual(PileQueueDAO.get_count_by_pile(2), 1)
 
 
 if __name__ == "__main__":

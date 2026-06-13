@@ -15,10 +15,10 @@
 然后执行：
 
 ```powershell
-mysql -u root -p charging_system < docs/demo-sql/01_prepare_batch_dispatch_demo.sql
+mysql -u root -p charging_system -e "source docs/demo-sql/01_prepare_batch_dispatch_demo.sql"
 ```
 
-再用任意普通用户账号登录用户端，提交一次充电请求，例如快充 80 度。此时等待车辆数从 4 变成 5，达到全站容量 `N + 1*M + 1*M = 5`，后端会触发批量调度。管理员端刷新充电桩状态，可以看到等待区车辆被分配到桩队列。
+再用任意普通用户账号登录用户端，提交一次充电请求，例如快充 80 度。此时等待车辆数从 4 变成 5，达到全站容量 `N + 1*M + 1*M = 5`，后端会触发批量调度。管理员端刷新充电桩状态，可以看到最多 4 辆车被分配到两个桩队列中，每个桩不超过 `2/2`，剩余 1 辆继续留在等候区。
 
 ## 2. 小容量手动演示
 
@@ -33,7 +33,7 @@ mysql -u root -p charging_system < docs/demo-sql/01_prepare_batch_dispatch_demo.
 然后执行：
 
 ```powershell
-mysql -u root -p charging_system < docs/demo-sql/02_reset_small_capacity_manual_demo.sql
+mysql -u root -p charging_system -e "source docs/demo-sql/02_reset_small_capacity_manual_demo.sql"
 ```
 
 接下来手动注册 3 个用户即可快速演示：
@@ -50,4 +50,3 @@ mysql -u root -p charging_system < docs/demo-sql/02_reset_small_capacity_manual_
 批量调度模式是后端运行时配置，SQL 不能直接修改 `EXTENDED_DISPATCH_MODE`，所以必须先通过管理员页面保存系统参数。
 
 两个脚本都会清空当前 `waiting_queue`、`pile_queue`、`dispatch_record`，并把未完成请求置为 `cancelled`，目的是避免旧数据影响演示。
-

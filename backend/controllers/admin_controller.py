@@ -78,6 +78,20 @@ def report_stats():
     return success(result)
 
 
+@bp.route("/reset/runtime", methods=["POST"])
+@admin_required
+def reset_runtime():
+    result = AdminService.reset_runtime_state()
+    return success(result)
+
+
+@bp.route("/reset/default", methods=["POST"])
+@admin_required
+def reset_default():
+    result = AdminService.reset_demo_defaults()
+    return success(result)
+
+
 @bp.route("/waiting-area", methods=["GET"])
 @admin_required
 def waiting_area():

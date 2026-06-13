@@ -10,6 +10,146 @@ from ..utils.timezone import local_now
 
 class AdminService:
     @staticmethod
+    def reset_runtime_state():
+        """清空当前运行态：保留用户、历史详单/账单和累计统计。"""
+        from ..models.waiting_queue import WaitingQueue
+        from ..models.pile_queue import PileQueue
+        from ..models.dispatch_record import DispatchRecord
+        from ..models.charging_request import ChargingRequest
+        from ..models.charging_session import ChargingSession
+        from ..models.fault_record import FaultRecord
+        from ..services.dispatch_service import resume_calling
+
+        now = local_now()
+        active_sessions = ChargingSession.query.filter_by(status="active").all()
+        active_requests = (
+            ChargingRequest.query
+            .filter(ChargingRequest.status.in_(["queuing", "dispatched", "charging", "pending_reschedule"]))
+            .all()
+        )
+        active_faults = FaultRecord.query.filter_by(status="active").all()
+
+        WaitingQueue.query.delete(synchronize_session=False)
+        PileQueue.query.delete(synchronize_session=False)
+        DispatchRecord.query.delete(synchronize_session=False)
+
+        for session in active_sessions:
+            session.status = "interrupted"
+            session.end_time = session.end_time or now
+
+        for req in active_requests:
+            req.status = "cancelled"
+            req.pile_id = None
+            req.modify_time = now
+
+        for record in active_faults:
+            record.status = "resolved"
+            record.recover_time = record.recover_time or now
+
+        for pile in ChargingPileDAO.find_all():
+            if pile.status in ("charging", "fault"):
+                pile.status = "available"
+
+        resume_calling()
+        db.session.flush()
+        return {
+            "cancelled_requests": len(active_requests),
+            "interrupted_sessions": len(active_sessions),
+            "resolved_faults": len(active_faults),
+            "message": "运行态已清空",
+        }
+
+    @staticmethod
+    def reset_demo_defaults():
+        """恢复演示默认：保留用户账号，清空业务数据并恢复默认桩/配置/计费。"""
+        from .. import config
+        from ..config import DEFAULT_PILES, DEFAULT_PRICING
+        from ..models.waiting_queue import WaitingQueue
+        from ..models.pile_queue import PileQueue
+        from ..models.dispatch_record import DispatchRecord
+        from ..models.fault_record import FaultRecord
+        from ..models.payment import Payment
+        from ..models.bill import Bill
+        from ..models.charging_detail import ChargingDetail
+        from ..models.charging_session import ChargingSession
+        from ..models.charging_request import ChargingRequest
+        from ..models.pricing_rule import PricingRule
+        from ..services.dispatch_service import resume_calling
+
+        # Delete children before parents to satisfy foreign keys on MySQL.
+        for model in (
+            WaitingQueue,
+            PileQueue,
+            DispatchRecord,
+            FaultRecord,
+            Payment,
+            Bill,
+            ChargingDetail,
+            ChargingSession,
+            ChargingRequest,
+        ):
+            model.query.delete(synchronize_session=False)
+
+        default_queue_len = 5
+        config.SYSTEM_CONFIG["FastChargingPileNum"] = 2
+        config.SYSTEM_CONFIG["TrickleChargingPileNum"] = 3
+        config.SYSTEM_CONFIG["WaitingAreaSize"] = 10
+        config.SYSTEM_CONFIG["ChargingQueueLen"] = default_queue_len
+        config.FAULT_DISPATCH_STRATEGY = "priority"
+        config.EXTENDED_DISPATCH_MODE = "normal"
+
+        for pr_cfg in DEFAULT_PRICING:
+            rule = PricingRule.query.filter_by(mode=pr_cfg["mode"]).first()
+            if not rule:
+                db.session.add(PricingRule(**pr_cfg))
+            else:
+                rule.peak_price = pr_cfg["peak_price"]
+                rule.mid_price = pr_cfg["mid_price"]
+                rule.off_peak_price = pr_cfg["off_peak_price"]
+                rule.service_fee_rate = pr_cfg["service_fee_rate"]
+                rule.updated_at = local_now()
+
+        default_ids = {p["pile_id"] for p in DEFAULT_PILES}
+        for pile in ChargingPileDAO.find_all():
+            if pile.pile_id not in default_ids:
+                pile.status = "off"
+                pile.queue_len = default_queue_len
+
+        for p_cfg in DEFAULT_PILES:
+            pile = ChargingPileDAO.find_by_id(p_cfg["pile_id"])
+            if not pile:
+                db.session.add(ChargingPile(
+                    pile_id=p_cfg["pile_id"],
+                    mode=p_cfg["mode"],
+                    power=p_cfg["power"],
+                    status="available",
+                    queue_len=default_queue_len,
+                    total_charge_num=0,
+                    total_charge_time=0.0,
+                    total_charge_capacity=0.0,
+                ))
+            else:
+                pile.mode = p_cfg["mode"]
+                pile.power = p_cfg["power"]
+                pile.status = "available"
+                pile.queue_len = default_queue_len
+                pile.total_charge_num = 0
+                pile.total_charge_time = 0.0
+                pile.total_charge_capacity = 0.0
+
+        resume_calling()
+        db.session.flush()
+        return {
+            "fast_pile_num": 2,
+            "slow_pile_num": 3,
+            "waiting_area_size": 10,
+            "charging_queue_len": default_queue_len,
+            "fault_strategy": "priority",
+            "dispatch_mode": "normal",
+            "message": "演示默认状态已恢复",
+        }
+
+    @staticmethod
     def get_report(period="day", date_str=None):
         """按日/周/月生成报表。"""
         now = local_now()
