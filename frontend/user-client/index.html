@@ -310,7 +310,7 @@
             <button class="btn btn-danger btn-sm" @click="cancelRequest">取消</button>
           </template>
           <template v-if="request.status === 'charging'">
-            <button class="btn btn-danger" @click="endCharging">结束充电</button>
+            <button class="btn btn-danger" @click="endCharging" :disabled="ending">{{ ending ? '处理中...' : '结束充电' }}</button>
           </template>
         </div>
       </div>
@@ -374,8 +374,8 @@
 
 <script>
 const { createApp } = Vue
-// const API = 'http://114.132.204.152/api'
-const API = '/api'
+const API = 'http://114.132.204.152/api'
+// const API = '/api'
 
 // 全局拦截：认证失效时自动退回登录页
 axios.interceptors.response.use(
@@ -402,7 +402,7 @@ createApp({
       reqForm: { mode:'F', amount:40 },
       request: null, chargingState: null,
       modifyAmountVal: '', pollTimer: null,
-      bills: [], detailVisible: false, currentDetail: null, currentBill: null,
+      bills: [], detailVisible: false, currentDetail: null, currentBill: null, ending: false,
     }
   },
   computed: {
@@ -516,7 +516,8 @@ createApp({
       try { const r = await axios.post(API+'/charging/start',{pile_id:pileId}); if(r.data.code===0){this.toast('充电已开始');this.loadRequest();this.loadChargingState()}else this.toast(r.data.message,'error') } catch(e) {}
     },
     async endCharging() {
-      try { const r = await axios.post(API+'/charging/end'); if(r.data.code===0){this.request=null;this.chargingState=null;if(this.pollTimer)clearInterval(this.pollTimer);this.loadBills()}else this.toast(r.data.message,'error') } catch(e) {}
+      if (this.ending) return; this.ending = true;
+      try { const r = await axios.post(API+'/charging/end'); if(r.data.code===0){this.request=null;this.chargingState=null;if(this.pollTimer)clearInterval(this.pollTimer);this.loadBills()}else this.toast(r.data.message,'error') } catch(e) {} finally { this.ending = false }
     },
     newRequest() { this.request = null; this.chargingState = null },
     async loadBills() {

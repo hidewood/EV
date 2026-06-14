@@ -213,11 +213,10 @@ class DispatchService:
         total_slots = sum(slots.values())
         if total_slots <= 0:
             return []
-        if respect_queue_len and len(requests) > total_slots:
-            requests = requests[:total_slots]
-
         pile_by_id = {p.pile_id: p for p in piles}
         requests = sorted(requests, key=lambda r: (r.request_amount, DispatchService._queue_num_key(r.queue_num)))
+        if respect_queue_len and len(requests) > total_slots:
+            requests = requests[:total_slots]
 
         if len(requests) <= 10:
             best = {"cost": float("inf"), "pairs": []}
