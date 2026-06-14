@@ -65,6 +65,7 @@ class PileService:
                     current_car = req.car_id
             result.append({
                 "pile_id": p.pile_id,
+                "pile_no": f"{p.mode}{p.pile_id}",
                 "mode": p.mode,
                 "mode_label": "快充" if p.mode == "F" else "慢充",
                 "power": p.power,

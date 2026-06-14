@@ -482,7 +482,23 @@ createApp({
     },
     async selectPile(id) {
       this.selectedPile = id
-      try { const r = await axios.get(API+'/queue/pile/'+id); if(r.data.code===0) this.pileVehicles = r.data.data } catch(e) {}
+      try {
+        const r = await axios.get(API+'/queue/pile/'+id)
+        if (r.data.code===0) {
+          const data = r.data.data
+          // 兼容两种响应：EV Flask 返回数组，EChargeDispatch 返回 {queue:[...]}
+          const rawList = Array.isArray(data) ? data : (data.queue || [])
+          // 统一字段名
+          this.pileVehicles = rawList.map(v => ({
+            ...v,
+            car_capacity: v.car_capacity ?? v.battery_capacity ?? 0,
+            wait_minutes: v.wait_minutes ?? Math.round((v.waiting_seconds || 0) / 60 * 10) / 10,
+            progress: v.progress ?? (v.status === 'charging' && v.request_amount > 0
+              ? Math.round((v.charged_amount || 0) / v.request_amount * 1000) / 10
+              : 0),
+          }))
+        }
+      } catch(e) {}
     },
     async powerOn(id) { await axios.post(API+'/pile/'+id+'/poweron'); this.loadPiles(); this.toast('已启动') },
     async startPile(id) { await axios.post(API+'/pile/'+id+'/start'); this.loadPiles(); this.toast('已投入运行') },

@@ -128,12 +128,14 @@ def waiting_area():
 def get_system_config():
     from .. import config
     return success({
+        "station_id": "EV-01",
         "fast_pile_num": config.SYSTEM_CONFIG["FastChargingPileNum"],
         "slow_pile_num": config.SYSTEM_CONFIG["TrickleChargingPileNum"],
         "waiting_area_size": config.SYSTEM_CONFIG["WaitingAreaSize"],
         "charging_queue_len": config.SYSTEM_CONFIG["ChargingQueueLen"],
         "fault_strategy": config.FAULT_DISPATCH_STRATEGY,
         "dispatch_mode": config.EXTENDED_DISPATCH_MODE,
+        "service_price": 0.8,
     })
 
 

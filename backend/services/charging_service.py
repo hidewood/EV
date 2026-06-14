@@ -45,7 +45,13 @@ class ChargingService:
 
         pile.status = "charging"
         ChargingPileDAO.update(pile)
-        return session, None
+        return {
+            "session_id": session.session_id,
+            "request_id": req.request_id,
+            "pile_id": pile_id,
+            "status": "charging",
+            "start_time": session.start_time.isoformat() if session.start_time else None,
+        }, None
 
     @staticmethod
     def end_charging(car_id):
@@ -115,9 +121,11 @@ class ChargingService:
 
         return {
             "session_id": session.session_id,
+            "request_id": req.request_id,
             "detail_id": detail.detail_id,
             "bill_id": bill.bill_id,
             "charge_amount": actual_amount,
+            "charged_amount": actual_amount,
             "charge_fee": charge_fee,
             "service_fee": service_fee,
             "total_fee": round(charge_fee + service_fee, 2),

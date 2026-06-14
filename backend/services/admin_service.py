@@ -189,6 +189,7 @@ class AdminService:
 
             result.append({
                 "pile_id": p.pile_id,
+                "pile_no": f"{p.mode}{p.pile_id}",
                 "mode": "快充" if p.mode == "F" else "慢充",
                 "charge_count": len(details),
                 "charge_time": round(total_time, 2),
@@ -196,12 +197,19 @@ class AdminService:
                 "charge_fee": round(total_charge_fee, 2),
                 "service_fee": round(total_service_fee, 2),
                 "total_fee": round(total_charge_fee + total_service_fee, 2),
+                # EChargeDispatch 兼容字段名
+                "total_charge_num": len(details),
+                "total_charge_time": round(total_time, 2),
+                "total_charge_capacity": round(total_amount, 2),
+                "total_charge_fee": round(total_charge_fee, 2),
+                "total_service_fee": round(total_service_fee, 2),
             })
 
         return {
             "period": period,
             "date": date_str,
             "piles": result,
+            "items": result,
         }
 
     @staticmethod
@@ -253,12 +261,14 @@ class AdminService:
         db.session.flush()
 
         return {
+            "station_id": "EV-01",
             "fast_pile_num": fast_num,
             "slow_pile_num": slow_num,
             "waiting_area_size": waiting_size,
             "charging_queue_len": queue_len,
             "fault_strategy": fault_strategy,
             "dispatch_mode": dispatch_mode,
+            "service_price": 0.8,
         }, None
 
     @staticmethod

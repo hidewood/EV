@@ -116,7 +116,7 @@ def start_charging():
         return error(4002)
     if err == "not_first_in_queue":
         return error(3003, "尚未轮到该车辆充电")
-    return success({"session_id": result.session_id})
+    return success(result)
 
 
 @bp.route("/status", methods=["GET"])
