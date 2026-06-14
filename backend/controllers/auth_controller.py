@@ -12,7 +12,7 @@ bp = Blueprint("auth", __name__)
 def register():
     data = request.get_json(silent=True) or {}
     car_id = data.get("car_id", "").strip()
-    user_name = data.get("user_name", "").strip()
+    user_name = data.get("user_name", "").strip() or car_id
     car_capacity = data.get("car_capacity", 0)
     password = data.get("password", "")
     role = data.get("role", "user")
@@ -21,7 +21,7 @@ def register():
             return error(1003, "管理员注册码无效")
     elif role != "user":
         return error(1001)
-    if not all([car_id, user_name, password]):
+    if not all([car_id, password]):
         return error(1001)
     if len(car_id) > 20 or len(user_name) > 50:
         return error(1001)
@@ -33,7 +33,18 @@ def register():
         return error(2003)
     if not user:
         return error(1001)
-    return success({"car_id": user.car_id, "user_name": user.user_name})
+    token = create_access_token(
+        identity=user.car_id,
+        additional_claims={"role": user.role},
+        expires_delta=JWT_ACCESS_TOKEN_EXPIRES,
+    )
+    return success({
+        "access_token": token,
+        "expires_in": int(JWT_ACCESS_TOKEN_EXPIRES.total_seconds()),
+        "car_id": user.car_id,
+        "role": user.role,
+        "user_name": user.user_name,
+    })
 
 
 @bp.route("/login", methods=["POST"])
@@ -55,6 +66,7 @@ def login():
     )
     return success({
         "access_token": token,
+        "expires_in": int(JWT_ACCESS_TOKEN_EXPIRES.total_seconds()),
         "car_id": user.car_id,
         "role": user.role,
         "user_name": user.user_name,

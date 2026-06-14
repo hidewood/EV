@@ -103,6 +103,7 @@ class RequestService:
         if not req:
             return None, "no_active_request"
         position = QueueService.get_car_position(req)
+        ahead_count = position.get("ahead_count", position.get("front_count", 0)) if position else 0
         # 检查最近一次调度是否因故障触发
         fault_notice = False
         if req.status == "dispatched" and req.pile_id:
@@ -116,12 +117,14 @@ class RequestService:
             if latest and ("fault" in (latest.from_location or "") or "fault" in (latest.dispatch_type or "") or "recovery" in (latest.from_location or "")):
                 fault_notice = True
         return {
+            "has_request": True,
             "request_id": req.request_id,
             "queue_num": req.queue_num,
             "status": req.status,
             "request_mode": req.request_mode,
             "request_amount": req.request_amount,
             "pile_id": req.pile_id,
+            "ahead_count": ahead_count,
             "position": position,
             "fault_notice": fault_notice,
         }, None

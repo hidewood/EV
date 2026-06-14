@@ -91,7 +91,7 @@ def queue_status():
     car_id = get_jwt_identity()
     result, err = RequestService.query_state(car_id)
     if err == "no_active_request":
-        return error(3002)
+        return success({"has_request": False})
     return success(result)
 
 
@@ -125,7 +125,7 @@ def charging_status():
     car_id = get_jwt_identity()
     result, err = ChargingService.query_charging_state(car_id)
     if err == "no_active_session":
-        return error(3002)
+        return success({"has_request": False})
     return success(result)
 
 

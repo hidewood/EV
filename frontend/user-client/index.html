@@ -292,7 +292,7 @@
           <div class="charge-info">
             <div class="item"><span>充电桩</span><span class="val">#{{ chargingState.pile_id }}</span></div>
             <div class="item"><span>功率</span><span class="val">{{ chargingState.pile_power }} kW</span></div>
-            <div class="item"><span>已充电量</span><span class="val">{{ chargingState.estimated_amount?.toFixed(1) }} / {{ chargingState.request_amount }} 度</span></div>
+            <div class="item"><span>已充电量</span><span class="val">{{ currentChargedAmount.toFixed(1) }} / {{ chargingState.request_amount }} 度</span></div>
             <div class="item"><span>当前费用</span><span class="val">&yen;{{ chargingState.current_total?.toFixed(2) }}</span></div>
           </div>
         </div>
@@ -374,7 +374,7 @@
 
 <script>
 const { createApp } = Vue
-const API = '/api'
+const API = 'http://114.132.204.152/api'
 
 // 全局拦截：认证失效时自动退回登录页
 axios.interceptors.response.use(
@@ -417,7 +417,11 @@ createApp({
     },
     chargePercent() {
       if (!this.chargingState) return 0
-      return Math.min(100, (this.chargingState.estimated_amount / this.chargingState.request_amount) * 100)
+      return Math.min(100, (this.currentChargedAmount / this.chargingState.request_amount) * 100)
+    },
+    currentChargedAmount() {
+      if (!this.chargingState) return 0
+      return Number(this.chargingState.estimated_amount ?? this.chargingState.charged_amount ?? 0)
     }
   },
   mounted() { if (this.token) { axios.defaults.headers.common['Authorization'] = 'Bearer '+this.token; this.loadAll() } },
@@ -461,7 +465,15 @@ createApp({
       try {
         const r = await axios.get(API+'/charging/queue-status')
         if (r.data.code===0) {
-          this.request = r.data.data
+          const data = r.data.data
+          if (data && data.has_request === false) {
+            this.request = null
+            this.chargingState = null
+            if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null }
+            this.loadBills()
+            return
+          }
+          this.request = data
           if (this.request?.status==='charging') { this.loadChargingState(); this.startPolling() }
         } else {
           // 请求已完成/取消/不存在 → 清空状态，刷新账单
@@ -475,7 +487,10 @@ createApp({
     async loadChargingState() {
       try {
         const r = await axios.get(API+'/charging/status')
-        if (r.data.code===0) { this.chargingState = r.data.data }
+        if (r.data.code===0) {
+          const data = r.data.data
+          this.chargingState = data && data.has_request === false ? null : data
+        }
         else { this.chargingState = null }
       } catch(e) { this.chargingState = null }
     },
@@ -495,7 +510,9 @@ createApp({
       try { const r = await axios.delete(API+'/charging/cancel'); if(r.data.code===0){this.request=null;this.chargingState=null;if(this.pollTimer)clearInterval(this.pollTimer)}else this.toast(r.data.message,'error') } catch(e) {}
     },
     async startCharging() {
-      try { const r = await axios.post(API+'/charging/start',{pile_id:this.request.pile_id||1}); if(r.data.code===0){this.toast('充电已开始');this.loadRequest();this.loadChargingState()}else this.toast(r.data.message,'error') } catch(e) {}
+      const pileId = this.request?.position?.pile_id ?? this.request?.pile_id
+      if (!pileId) { this.toast('尚未分配到充电桩', 'error'); return }
+      try { const r = await axios.post(API+'/charging/start',{pile_id:pileId}); if(r.data.code===0){this.toast('充电已开始');this.loadRequest();this.loadChargingState()}else this.toast(r.data.message,'error') } catch(e) {}
     },
     async endCharging() {
       try { const r = await axios.post(API+'/charging/end'); if(r.data.code===0){this.request=null;this.chargingState=null;if(this.pollTimer)clearInterval(this.pollTimer);this.loadBills()}else this.toast(r.data.message,'error') } catch(e) {}

@@ -102,12 +102,61 @@ class SecurityAndQueueTest(unittest.TestCase):
         })
         self.assertEqual(allowed["code"], 0)
 
+    def test_register_allows_missing_user_name_and_returns_token(self):
+        resp = self.post("/api/auth/register", {
+            "car_id": "NO_NAME_USER",
+            "car_capacity": 60,
+            "password": "pw",
+        })
+        self.assertEqual(resp["code"], 0)
+        self.assertEqual(resp["data"]["car_id"], "NO_NAME_USER")
+        self.assertEqual(resp["data"]["user_name"], "NO_NAME_USER")
+        self.assertEqual(resp["data"]["role"], "user")
+        self.assertIn("access_token", resp["data"])
+        self.assertGreater(resp["data"]["expires_in"], 0)
+
     def test_user_cannot_access_admin_api(self):
         self.assertEqual(self.register_user("U1")["code"], 0)
         token = self.login("U1")
 
         resp = self.get("/api/admin/system-config", token)
         self.assertEqual(resp["code"], 1003)
+
+    def test_empty_user_status_returns_has_request_false(self):
+        self.assertEqual(self.register_user("U1")["code"], 0)
+        token = self.login("U1")
+
+        queue_status = self.get("/api/charging/queue-status", token)
+        self.assertEqual(queue_status["code"], 0)
+        self.assertEqual(queue_status["data"], {"has_request": False})
+
+        charging_status = self.get("/api/charging/status", token)
+        self.assertEqual(charging_status["code"], 0)
+        self.assertEqual(charging_status["data"], {"has_request": False})
+
+    def test_dispatched_status_contains_compatibility_fields(self):
+        self.assertEqual(self.register_user("U1")["code"], 0)
+        token = self.login("U1")
+        req = self.post("/api/charging/request", {
+            "request_mode": "F",
+            "request_amount": 10,
+        }, token)
+        self.assertEqual(req["code"], 0)
+
+        queue_status = self.get("/api/charging/queue-status", token)
+        self.assertEqual(queue_status["code"], 0)
+        self.assertTrue(queue_status["data"]["has_request"])
+        self.assertEqual(queue_status["data"]["ahead_count"], 0)
+        self.assertEqual(queue_status["data"]["position"]["pile_id"], req["data"]["pile_id"])
+        self.assertEqual(queue_status["data"]["position"]["ahead_count"], 0)
+
+        charging_status = self.get("/api/charging/status", token)
+        self.assertEqual(charging_status["code"], 0)
+        self.assertTrue(charging_status["data"]["has_request"])
+        self.assertEqual(charging_status["data"]["status"], "dispatched")
+        self.assertEqual(charging_status["data"]["charged_amount"], 0.0)
+        self.assertEqual(charging_status["data"]["estimated_amount"], 0.0)
+        self.assertEqual(charging_status["data"]["pile_id"], req["data"]["pile_id"])
 
     def test_external_api_requires_partner_token(self):
         import backend.config as config

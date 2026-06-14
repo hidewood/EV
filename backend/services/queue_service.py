@@ -34,12 +34,19 @@ class QueueService:
     @staticmethod
     def get_car_position(car_request):
         if car_request.status in ("dispatched", "charging"):
-            return {"position": "充电区", "queue_num": car_request.queue_num}
+            return {
+                "position": "充电区",
+                "queue_num": car_request.queue_num,
+                "pile_id": car_request.pile_id,
+                "ahead_count": 0,
+                "front_count": 0,
+            }
         front_count = WaitingQueueDAO.get_front_count(car_request.request_id)
         return {
             "position": f"等候区第{front_count + 1}位",
             "queue_num": car_request.queue_num,
             "front_count": front_count,
+            "ahead_count": front_count,
         }
 
     @staticmethod

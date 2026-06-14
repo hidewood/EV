@@ -184,7 +184,34 @@ class ChargingService:
     def query_charging_state(car_id):
         session = ChargingSessionDAO.find_active_by_car_id(car_id)
         if not session:
-            return None, "no_active_session"
+            req = ChargingRequestDAO.find_active_by_car_id(car_id)
+            if not req:
+                return {"has_request": False}, None
+            position = None
+            if req.status in ("queuing", "dispatched", "pending_reschedule"):
+                from ..services.queue_service import QueueService
+                position = QueueService.get_car_position(req)
+            pile = ChargingPileDAO.find_by_id(req.pile_id) if req.pile_id else None
+            return {
+                "has_request": True,
+                "request_id": req.request_id,
+                "queue_num": req.queue_num,
+                "status": req.status,
+                "request_mode": req.request_mode,
+                "request_amount": req.request_amount,
+                "charged_amount": 0.0,
+                "estimated_amount": 0.0,
+                "pile_id": req.pile_id,
+                "pile_mode": pile.mode if pile else req.request_mode,
+                "pile_power": pile.power if pile else None,
+                "session_id": None,
+                "start_time": None,
+                "elapsed_hours": 0.0,
+                "current_charge_fee": 0.0,
+                "current_service_fee": 0.0,
+                "current_total": 0.0,
+                "position": position,
+            }, None
         req = ChargingRequestDAO.find_by_id(session.request_id)
         pile = ChargingPileDAO.find_by_id(session.pile_id)
         pricing = PricingRuleDAO.get_by_mode(pile.mode)
@@ -195,12 +222,18 @@ class ChargingService:
         current_service = calculate_service_fee(estimated_amount, pricing)
 
         return {
+            "has_request": True,
+            "request_id": req.request_id,
+            "queue_num": req.queue_num,
+            "status": req.status,
             "pile_id": pile.pile_id,
             "pile_mode": pile.mode,
             "pile_power": pile.power,
+            "session_id": session.session_id,
             "start_time": session.start_time.isoformat(),
             "elapsed_hours": round(elapsed, 2),
             "estimated_amount": estimated_amount,
+            "charged_amount": estimated_amount,
             "request_amount": req.request_amount,
             "current_charge_fee": current_fee,
             "current_service_fee": current_service,
