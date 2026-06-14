@@ -7,6 +7,7 @@ from ..models.charging_detail import ChargingDetail
 from ..models.bill import Bill
 from ..models.dispatch_record import DispatchRecord
 from ..services.dispatch_service import DispatchService
+from ..services.queue_service import QueueService
 from ..utils.pricing import calculate_charge_fee, calculate_service_fee
 from ..utils.timezone import local_now
 
@@ -27,6 +28,13 @@ class ChargingService:
             return None, "pile_not_found"
         if pile.status not in ("available", "charging"):
             return None, "pile_unavailable"
+
+        if QueueService.pile_ahead_count(req) > 0:
+            return None, "not_first_in_queue"
+
+        active = ChargingSessionDAO.find_active_by_pile_id(pile_id)
+        if active and active.car_id != car_id:
+            return None, "not_first_in_queue"
 
         first = PileQueueDAO.get_first(pile_id)
         if not first or first.request_id != req.request_id:

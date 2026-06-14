@@ -158,6 +158,35 @@ class SecurityAndQueueTest(unittest.TestCase):
         self.assertEqual(charging_status["data"]["estimated_amount"], 0.0)
         self.assertEqual(charging_status["data"]["pile_id"], req["data"]["pile_id"])
 
+    def test_dispatched_vehicle_reports_pile_ahead_count(self):
+        self.assertEqual(self.register_user("U1")["code"], 0)
+        token1 = self.login("U1")
+        req1 = self.post("/api/charging/request", {
+            "request_mode": "F",
+            "request_amount": 20,
+        }, token1)
+        self.assertEqual(req1["code"], 0)
+        self.assertEqual(self.post("/api/charging/start", {
+            "pile_id": req1["data"]["pile_id"],
+        }, token1)["code"], 0)
+
+        self.assertEqual(self.register_user("U2")["code"], 0)
+        token2 = self.login("U2")
+        req2 = self.post("/api/charging/request", {
+            "request_mode": "F",
+            "request_amount": 20,
+        }, token2)
+        self.assertEqual(req2["code"], 0)
+
+        queue_status = self.get("/api/charging/queue-status", token2)
+        self.assertEqual(queue_status["code"], 0)
+        self.assertEqual(queue_status["data"]["ahead_count"], 1)
+        self.assertEqual(queue_status["data"]["position"]["ahead_count"], 1)
+        self.assertEqual(queue_status["data"]["position"]["front_count"], 1)
+        self.assertEqual(self.post("/api/charging/start", {
+            "pile_id": req2["data"]["pile_id"],
+        }, token2)["code"], 3003)
+
     def test_external_api_requires_partner_token(self):
         import backend.config as config
 

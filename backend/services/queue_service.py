@@ -32,14 +32,33 @@ class QueueService:
         WaitingQueueDAO.remove_by_request_id(request_id)
 
     @staticmethod
+    def pile_ahead_count(car_request):
+        if car_request.status == "charging":
+            return 0
+        pile_id = car_request.pile_id
+        if not pile_id:
+            return 0
+
+        entry = PileQueueDAO.find_by_request_id(car_request.request_id)
+        if entry and entry.pile_id == pile_id:
+            return max(0, entry.position - 1)
+
+        from ..dao.user_dao import ChargingSessionDAO
+        active = ChargingSessionDAO.find_active_by_pile_id(pile_id)
+        if active and active.request_id != car_request.request_id:
+            return 1
+        return PileQueueDAO.get_count_by_pile(pile_id)
+
+    @staticmethod
     def get_car_position(car_request):
-        if car_request.status in ("dispatched", "charging"):
+        if car_request.status in ("dispatched", "charging", "pending_reschedule"):
+            ahead_count = QueueService.pile_ahead_count(car_request)
             return {
                 "position": "充电区",
                 "queue_num": car_request.queue_num,
                 "pile_id": car_request.pile_id,
-                "ahead_count": 0,
-                "front_count": 0,
+                "ahead_count": ahead_count,
+                "front_count": ahead_count,
             }
         front_count = WaitingQueueDAO.get_front_count(car_request.request_id)
         return {

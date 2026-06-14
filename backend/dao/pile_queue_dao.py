@@ -25,6 +25,10 @@ class PileQueueDAO:
         return PileQueue.query.filter_by(pile_id=pile_id).count()
 
     @staticmethod
+    def find_by_request_id(request_id):
+        return PileQueue.query.filter_by(request_id=request_id).first()
+
+    @staticmethod
     def get_by_pile_ordered(pile_id):
         return (
             PileQueue.query
